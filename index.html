@@ -869,26 +869,30 @@ function sanitizeJsonControlChars(str) {
 
 async function callLLMJson(sys, usr) {
   const text = await callLLM(sys, usr);
-  // 1. 去除 markdown 代码块
-  let cleaned = text.replace(/```(?:json)?\s*/g, '').replace(/```\s*/g, '').trim();
-  // 2. 修复模型偶发的重复键 artifact：`"version":  version": 1` → `"version": 1`
+  // 1. 去除 BOM 和 markdown 代码块
+  let cleaned = text.replace(/^\uFEFF/, '')
+                    .replace(/```(?:json)?\s*/g, '').replace(/```\s*/g, '').trim();
+  // 2. 提取首个 JSON 结构（去除模型可能在 JSON 前后添加的说明文字）
+  const firstBracket = cleaned.search(/[\[{]/);
+  if (firstBracket > 0) cleaned = cleaned.slice(firstBracket);
+  // 3. 修复模型偶发的重复键 artifact：`"version":  version": 1` → `"version": 1`
   cleaned = cleaned.replace(/"(\w+)":\s+\1":/g, '"$1":');
-  // 3. 转义字符串值内的原始控制字符（修复 "Bad control character in JSON" 错误）
+  // 4. 转义字符串值内的原始控制字符（修复 "Bad control character in JSON" 错误）
   cleaned = sanitizeJsonControlChars(cleaned);
-  // 4. 直接解析
+  // 5. 直接解析
   try { return JSON.parse(cleaned); } catch {
-    // 5. 提取首个 JSON 对象 / 数组
+    // 6. 再次提取首个完整 JSON 对象 / 数组
     const m = cleaned.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
     if (m) {
       try { return JSON.parse(m[1]); } catch {
-        // 6. 截断恢复：找到最后一个完整对象后截取
+        // 7. 截断恢复：找到最后一个完整对象后截取（处理数组被截断的情况）
         const lastClose = m[1].lastIndexOf('},');
         if (lastClose > 0) {
           try { return JSON.parse(m[1].slice(0, lastClose + 1) + ']'); } catch {}
         }
       }
     }
-    throw new Error('JSON 解析失败：' + cleaned.slice(0, 120));
+    throw new Error('JSON 解析失败：' + cleaned.slice(0, 200));
   }
 }
 
@@ -952,20 +956,40 @@ async function runRealPipeline() {
   }
   await sleep(200);
 
-  // Agent 4: 脚本生成
+  // Agent 4: 脚本生成（逐版本调用，避免长 JSON 截断）
   setNodeState('Script', 'running');
-  addLog('SCRIPT', 'tag-script', '生成 3 版本 × 3 钩子变体脚本…');
-  try {
-    const sys4 = '你是财经短视频脚本专家。根据选题和口播初稿，生成3个不同风格的脚本版本。每版包含：cover（封面文案≤12汉字，用\\n分两行）、direct_post（直发文字60-80字）、hooks（3个钩子≤25字，情绪策略各异）、pinned（置顶评论带emoji）、hook_type（钩子类型）、structure（脚本结构）。输出纯JSON数组（不要代码块）：[{"version":1,"cover":"","direct_post":"","hooks":["","",""],"pinned":"","hook_type":"","structure":""},...]';
-    scripts = await callLLMJson(sys4, `选题：${winner.topic}\n口播初稿：${draft}`);
-    if (!Array.isArray(scripts)) scripts = [scripts];
-    scripts.forEach((s, i) => addLog('SCRIPT', 'tag-script', `版本${i+1} 完成 | 钩子：${s.hook_type||'—'}`));
-    addLog('SCRIPT', 'tag-script', '封面文案检查：✓ 均≤12字');
-    setNodeState('Script', 'done');
-  } catch(e) {
-    addLog('SCRIPT', 'tag-script', `<span style="color:#f87171">✗ ${e.message}</span>`);
-    setNodeState('Script', 'error'); throw e;
+  addLog('SCRIPT', 'tag-script', '逐版本生成脚本（3版 × 3钩子，单次1版保证完整）…');
+  const ANGLES    = ['信息差/揭秘', '情绪共鸣', '利益驱动'];
+  const STRUCTS   = ['问题前置+层层解答', '场景带入+情绪推进', '结果前置+倒叙还原'];
+  const HOOK_TYPES_LIST = ['痛点类', '好奇类', '利益输送类'];
+  const sys4_base = '你是财经短视频脚本专家。根据选题和口播初稿，生成1个指定风格的完整脚本版本。' +
+    '输出纯JSON对象（不要代码块，不要注释，不要换行在字符串值内）：' +
+    '{"version":1,"cover":"封面≤12汉字用\\\\n换行分两行","direct_post":"直发文字60-80字",' +
+    '"hooks":["钩子1≤25字","钩子2≤25字","钩子3≤25字"],' +
+    '"pinned":"置顶评论带emoji","hook_type":"","structure":""}';
+  scripts = [];
+  for (let idx = 0; idx < 3; idx++) {
+    addLog('SCRIPT', 'tag-script', `→ 版本 ${idx+1}（角度：${ANGLES[idx]}）…`);
+    let done = false;
+    for (let attempt = 0; attempt < 2 && !done; attempt++) {
+      try {
+        const u4 = `选题：${winner.topic}\n口播初稿：${draft}\n` +
+          `角度：${ANGLES[idx]}，结构：${STRUCTS[idx]}，钩子类型：${HOOK_TYPES_LIST[idx]}，版本号：${idx+1}`;
+        const s = await callLLMJson(sys4_base, u4);
+        s.version = idx + 1;
+        s.hook_type = s.hook_type || HOOK_TYPES_LIST[idx];
+        scripts.push(s);
+        addLog('SCRIPT', 'tag-script', `版本${idx+1} ✓ | 钩子：${s.hook_type}`);
+        done = true;
+      } catch(e) {
+        if (attempt === 0) addLog('SCRIPT', 'tag-script', `版本${idx+1} 首次失败，重试…`);
+        else addLog('SCRIPT', 'tag-script', `<span style="color:#f87171">版本${idx+1} 失败，已跳过</span>`);
+      }
+    }
   }
+  if (scripts.length === 0) { setNodeState('Script', 'error'); throw new Error('所有版本均生成失败'); }
+  addLog('SCRIPT', 'tag-script', `共完成 ${scripts.length} 个版本`);
+  setNodeState('Script', 'done');
   await sleep(200);
 
   // Agent 5: 三重审核
