@@ -305,8 +305,8 @@ select.config-input option { background: var(--bg3); }
   .workspace { grid-template-columns: 1fr; }
 }
 </style>
-<!-- docx.js：浏览器端生成 Word .docx 文件 -->
-<script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
+<!-- docx.js：浏览器端生成 Word .docx 文件（jsdelivr，国内可用） -->
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.js"></script>
 </head>
 <body>
 
@@ -1101,8 +1101,13 @@ async function runMockPipeline() {
 // 一键导出脚本（Word .docx 格式）
 // ═══════════════════════════════════
 async function exportScripts() {
+  const btn = document.getElementById('exportBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 生成中…'; }
+  const restoreBtn = () => { if (btn) { btn.disabled = false; btn.textContent = '↓ 导出 .docx'; } };
   if (typeof docx === 'undefined') {
-    addLog('SYS', 'tag-sys', '✗ docx 库尚未加载，请刷新后重试');
+    addLog('SYS', 'tag-sys', '✗ docx 库加载失败（CDN 未就绪），已自动改为 .md 下载');
+    exportScriptsMd();
+    restoreBtn();
     return;
   }
   const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
@@ -1168,9 +1173,35 @@ async function exportScripts() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     addLog('SYS', 'tag-sys', `✓ 已导出：${filename}`);
+    restoreBtn();
   } catch (e) {
-    addLog('SYS', 'tag-sys', `✗ 导出失败：${e.message}`);
+    addLog('SYS', 'tag-sys', `✗ docx 导出失败（${e.message}），已自动改为 .md 下载`);
+    exportScriptsMd();
+    restoreBtn();
   }
+}
+
+// 降级：导出 Markdown（CDN 失败时兜底）
+function exportScriptsMd() {
+  const scripts = window._generatedScripts || MOCK_SCRIPTS;
+  const topic = window._currentTopic || '脚本';
+  let md = `# 爆款脚本：${topic}\n\n生成时间：${new Date().toLocaleString('zh-CN')}\n\n---\n\n`;
+  scripts.forEach((s, i) => {
+    md += `## 版本 ${i + 1}${s.hook_type ? '  ·  ' + s.hook_type : ''}\n\n`;
+    md += `**结构**：${s.structure || ''}\n\n`;
+    md += `### 封面文案\n\`\`\`\n${(s.cover || '').replace(/\\n/g, '\n')}\n\`\`\`\n\n`;
+    md += `### 直发语\n${s.direct_post || ''}\n\n`;
+    md += `### 口播 / 钩子\n`;
+    (s.hooks || []).forEach((hk, hi) => { md += `**变体 ${hi + 1}：** ${hk}\n\n`; });
+    md += `### 置顶评论\n${s.pinned || ''}\n\n---\n\n`;
+  });
+  const fname = `脚本_${topic.slice(0, 10)}_${new Date().toISOString().slice(0, 10)}.md`;
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([md], { type: 'text/markdown;charset=utf-8' })),
+    download: fname
+  });
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  addLog('SYS', 'tag-sys', `✓ 已导出（md 格式）：${fname}`);
 }
 </script>
 </body>
