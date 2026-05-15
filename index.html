@@ -1147,8 +1147,12 @@ function exportScripts() {
     <div class="sec-title">💬 直发语</div>
     <div class="body-text">${esc(s.direct_post)}</div>
   </div>
+  ${s.oral_script ? `<div class="section">
+    <div class="sec-title">🎤 口播正文</div>
+    <div class="oral">${esc(s.oral_script)}</div>
+  </div>` : ''}
   <div class="section">
-    <div class="sec-title">🎤 口播钩子</div>
+    <div class="sec-title">⚡ 开头钩子变体</div>
     ${hooks}
   </div>
   <div class="section">
