@@ -402,7 +402,7 @@ select.config-input option { background: var(--bg3); }
           <div class="agent-card" id="nodeScript">
             <span class="agent-icon">📝</span>
             <div class="agent-name">脚本生成</div>
-            <div class="agent-desc">封面+口播<br>3版×3钩子</div>
+            <div class="agent-desc">封面+口播<br>5版本脚本</div>
             <div class="agent-status status-waiting" id="statusScript">待机</div>
             <div class="agent-progress"><div class="agent-progress-bar" id="progScript"></div></div>
           </div>
@@ -665,7 +665,7 @@ function renderOutput(topic, scripts, review, topics) {
 
   document.getElementById('outputPlaceholder').style.display = 'none';
   document.getElementById('outputContent').style.display = 'block';
-  document.getElementById('outputMeta').textContent = `选题：${topic.slice(0,16)}… | ${scripts.length}版本 × 3钩子`;
+  document.getElementById('outputMeta').textContent = `选题：${topic.slice(0,16)}… | ${scripts.length}版本`;
   document.getElementById('exportBtn').style.display = 'inline-flex';
 
   let html = '';
@@ -884,11 +884,12 @@ async function runRealPipeline() {
   setNodeState('Judge', 'running');
   addLog('JUDGE', 'tag-judge', 'LLM（AiAPI）开始评估选题…');
   try {
-    const sys2 = '你是财经短视频选题专家。对选题按爆款潜力评分（0-100），命中以下法则越多越好：信息差/揭秘、情绪共鸣点、权威解读、反认知观点、常见痛点、替弱势群体发声、说出大众心里话、借势、名人窥探、涨跌偏好、稀缺信息、娱乐性。输出纯JSON（不要代码块）：{"topic":"","score":90,"criteria":["法则1"],"structure":"脚本结构名"}';
+    const sys2 = '你是财经短视频选题专家。对选题按爆款潜力评分（0-100），命中以下法则越多越好：信息差/揭秘、情绪共鸣点、权威解读、反认知观点、常见痛点、替弱势群体发声、说出大众心里话、借势、名人窥探、涨跌偏好、稀缺信息、娱乐性。还要挖掘财经切入角度（无论选题是否直接涉及财经，都必须找到财经关联：股价/行业趋势/个人理财启示/消费经济等）。输出纯JSON（不要代码块）：{"topic":"","score":90,"criteria":["法则1"],"structure":"脚本结构名","financial_angle":"财经切入角度说明"}';
     const topicsStr = topics.map((t, i) => `${i+1}. ${t.topic}`).join('\n');
     winner = await callLLMJson(sys2, `对以下选题评分并选出最佳：\n${topicsStr}`);
     addLog('JUDGE', 'tag-judge', `最佳选题 [${winner.score}分]：${winner.topic}`);
     addLog('JUDGE', 'tag-judge', `命中法则：${(winner.criteria||[]).join('、')}`);
+    addLog('JUDGE', 'tag-judge', `财经切入：${winner.financial_angle||'—'}`);
     setNodeState('Judge', 'done');
   } catch(e) {
     addLog('JUDGE', 'tag-judge', `<span style="color:#f87171">✗ ${e.message}</span>`);
@@ -901,8 +902,9 @@ async function runRealPipeline() {
   addLog('CONTENT', 'tag-content', `目标选题：「${winner.topic}」`);
   addLog('CONTENT', 'tag-content', '生成口播初稿（裁缝拼接法）…');
   try {
-    const sys3 = '你是财经短视频口播稿专家，用裁缝拼接法（短视频强钩子+长视频深度内容）写200-300字初稿，含：强开场钩子（10-15字）、问题展开（100字）、核心洞察（100字）、结尾行动引导（一句话）。只输出纯文本。';
-    draft = await callLLM(sys3, `选题：${winner.topic}。风格：理性犀利，有信息差，口语化，让普通投资者有收获。`);
+    const sys3 = '你是财经短视频口播稿专家，用裁缝拼接法（短视频强钩子+长视频深度内容）写200-300字初稿，含：强开场钩子（10-15字）、问题展开（100字）、核心洞察（100字）、结尾行动引导（一句话）。无论选题是否直接涉及财经，必须找到其财经切入点（行业影响/个人理财启示/消费趋势/投资逻辑），以财经视角为普通投资者/打工人提供有价值的洞察。只输出纯文本。';
+    const financialAngle = winner.financial_angle || '找到该话题的财经影响与投资者视角';
+    draft = await callLLM(sys3, `选题：${winner.topic}。财经切入角度：${financialAngle}。风格：理性犀利，有信息差，口语化，让普通投资者/从业者有收获。`);
     addLog('CONTENT', 'tag-content', '口播初稿完成，相似度检测 → <strong style="color:#4ade80">通过 ✓</strong>');
     setNodeState('Content', 'done');
   } catch(e) {
