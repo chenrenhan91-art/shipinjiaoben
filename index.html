@@ -975,10 +975,10 @@ async function runRealPipeline(forceTopic) {
 
   // Agent 4: 脚本生成（逐版本调用，避免长 JSON 截断）
   setNodeState('Script', 'running');
-  addLog('SCRIPT', 'tag-script', '逐版本生成脚本（3版 × 3钩子，单次1版保证完整）…');
-  const ANGLES    = ['信息差/揭秘', '情绪共鸣', '利益驱动'];
-  const STRUCTS   = ['问题前置+层层解答', '场景带入+情绪推进', '结果前置+倒叙还原'];
-  const HOOK_TYPES_LIST = ['痛点类', '好奇类', '利益输送类'];
+  addLog('SCRIPT', 'tag-script', '逐版本生成脚本（5版 × 3钩子，单次1版保证完整）…');
+  const ANGLES    = ['信息差/揭秘', '情绪共鸣', '利益驱动', '悬念反转', '普通人视角'];
+  const STRUCTS   = ['问题前置+层层解答', '场景带入+情绪推进', '结果前置+倒叙还原', '反直觉开场+真相揭秘', '共情开场+行动指南'];
+  const HOOK_TYPES_LIST = ['痛点类', '好奇类', '利益输送类', '悬念类', '共情类'];
   const sys4_base = '你是财经短视频脚本专家。根据选题和口播素材，生成1个指定风格的完整脚本版本。' +
     '口播稿须按本版本角度重新改写（200-250字，口语化，字符串值内禁止原始换行符）。' +
     '输出纯JSON对象（不要代码块，不要注释，字符串值内禁止原始换行符）：' +
@@ -987,7 +987,7 @@ async function runRealPipeline(forceTopic) {
     '"hooks":["钩子1≤25字","钩子2≤25字","钩子3≤25字"],' +
     '"pinned":"置顶评论带emoji","hook_type":"","structure":""}';
   scripts = [];
-  for (let idx = 0; idx < 3; idx++) {
+  for (let idx = 0; idx < 5; idx++) {
     addLog('SCRIPT', 'tag-script', `→ 版本 ${idx+1}（角度：${ANGLES[idx]}）…`);
     let done = false;
     for (let attempt = 0; attempt < 2 && !done; attempt++) {
