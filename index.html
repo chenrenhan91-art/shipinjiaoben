@@ -897,6 +897,23 @@ async function callLLMJson(sys, usr) {
         }
       }
     }
+    // 8. 对象提取兜底：扫描全文，把所有能独立解析的 {...} 对象捞出来拼成数组
+    //    处理"对象间夹杂垃圾 token"（如 `}, 98"},` / `"key"value":`）等 LLM 输出乱序
+    const extracted = [];
+    let depth = 0, start = -1, inStr = false, esc = false;
+    for (let i = 0; i < cleaned.length; i++) {
+      const c = cleaned[i];
+      if (esc) { esc = false; continue; }
+      if (c === '\\' && inStr) { esc = true; continue; }
+      if (c === '"') { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (c === '{') { if (depth === 0) start = i; depth++; }
+      else if (c === '}') { depth--; if (depth === 0 && start >= 0) {
+        try { extracted.push(JSON.parse(cleaned.slice(start, i + 1))); } catch {}
+        start = -1;
+      }}
+    }
+    if (extracted.length > 0) return extracted;
     throw new Error('JSON 解析失败：' + cleaned.slice(0, 200));
   }
 }
