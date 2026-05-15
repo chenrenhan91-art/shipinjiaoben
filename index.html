@@ -305,6 +305,8 @@ select.config-input option { background: var(--bg3); }
   .workspace { grid-template-columns: 1fr; }
 }
 </style>
+<!-- docx.js：浏览器端生成 Word .docx 文件 -->
+<script src="https://unpkg.com/docx@8.5.0/build/index.js"></script>
 </head>
 <body>
 
@@ -456,7 +458,7 @@ select.config-input option { background: var(--bg3); }
           <div class="dot dot-blue"></div>
           <div class="panel-title">脚本输出</div>
           <div class="spacer"></div>
-          <button class="btn btn-outline btn-sm" id="exportBtn" onclick="exportScripts()" style="display:none">↓ 导出脚本</button>
+          <button class="btn btn-outline btn-sm" id="exportBtn" onclick="exportScripts()" style="display:none">↓ 导出 .docx</button>
           <span id="outputMeta" style="font-size:11px;color:var(--muted);margin-left:8px"></span>
         </div>
         <div class="output-body" id="outputBody">
@@ -1072,30 +1074,79 @@ async function runMockPipeline() {
 }
 
 // ═══════════════════════════════════
-// 一键导出脚本
+// 一键导出脚本（Word .docx 格式）
 // ═══════════════════════════════════
-function exportScripts() {
+async function exportScripts() {
+  if (typeof docx === 'undefined') {
+    addLog('SYS', 'tag-sys', '✗ docx 库尚未加载，请刷新后重试');
+    return;
+  }
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
   const scripts = window._generatedScripts || MOCK_SCRIPTS;
   const topic = window._currentTopic || '脚本';
-  let md = `# 爆款脚本：${topic}\n\n生成时间：${new Date().toLocaleString('zh-CN')}\n\n---\n\n`;
+  const dateStr = new Date().toLocaleString('zh-CN');
+  const filename = `脚本_${topic.slice(0,10)}_${new Date().toISOString().slice(0,10)}.docx`;
+
+  // 辅助函数
+  const h1 = (t) => new Paragraph({ text: t, heading: HeadingLevel.HEADING_1 });
+  const h2 = (t) => new Paragraph({ text: t, heading: HeadingLevel.HEADING_2 });
+  const h3 = (t) => new Paragraph({ text: t, heading: HeadingLevel.HEADING_3 });
+  const p  = (t) => new Paragraph({ text: t || '' });
+  const b  = (label, val) => new Paragraph({ children: [
+    new TextRun({ text: label, bold: true }),
+    new TextRun({ text: val || '' })
+  ]});
+
+  const children = [];
+  children.push(h1(`爆款脚本：${topic}`));
+  children.push(p(`生成时间：${dateStr}`));
+  children.push(p(''));
+
   scripts.forEach((s, i) => {
-    md += `## 版本 ${i+1}（${s.hook_type||''}）\n\n**结构**：${s.structure||''}\n\n`;
-    md += `### 📸 封面文案\n\`\`\`\n${(s.cover||'').replace(/\\n/g,'\n')}\n\`\`\`\n\n`;
-    md += `### 💬 直发语\n${s.direct_post||''}\n\n`;
-    md += `### 🎤 口播文案\n`;
-    (s.hooks||[]).forEach((h, hi) => { md += `**变体 ${hi+1}：** ${h}\n\n`; });
-    md += `### 📌 置顶评论\n${s.pinned||''}\n\n---\n\n`;
+    children.push(h2(`版本 ${i + 1}${s.hook_type ? '  ·  ' + s.hook_type : ''}`));
+    children.push(b('结构：', s.structure));
+    children.push(p(''));
+
+    children.push(h3('封面文案'));
+    children.push(p((s.cover || '').replace(/\\n/g, '  /  ')));
+    children.push(p(''));
+
+    children.push(h3('直发语'));
+    children.push(p(s.direct_post));
+    children.push(p(''));
+
+    children.push(h3('口播 / 钩子'));
+    if (s.oral_script) children.push(p(s.oral_script));
+    (s.hooks || []).forEach((hk, hi) => {
+      children.push(new Paragraph({ children: [
+        new TextRun({ text: `变体 ${hi + 1}：`, bold: true }),
+        new TextRun({ text: hk || '' })
+      ]}));
+    });
+    children.push(p(''));
+
+    children.push(h3('置顶评论'));
+    children.push(p(s.pinned));
+    children.push(p(''));
+    children.push(p('─'.repeat(36)));
+    children.push(p(''));
   });
-  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `脚本_${topic.slice(0,10)}_${new Date().toISOString().slice(0,10)}.md`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  addLog('SYS', 'tag-sys', `已导出：脚本_${topic.slice(0,10)}_${new Date().toISOString().slice(0,10)}.md`);
+
+  try {
+    const doc = new Document({ sections: [{ children }] });
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    addLog('SYS', 'tag-sys', `✓ 已导出：${filename}`);
+  } catch (e) {
+    addLog('SYS', 'tag-sys', `✗ 导出失败：${e.message}`);
+  }
 }
 </script>
 </body>
