@@ -828,7 +828,8 @@ function resetAll() {
 // API 调用工具
 // ═══════════════════════════════════
 async function callLLM(sys, usr) {
-  const key = document.getElementById('cfgApiKey').value.trim();
+  // 过滤非 ASCII 字符，防止 fetch headers 报 non ISO-8859-1 错误（粘贴 key 时可能带入不可见 Unicode 字符）
+  const key = document.getElementById('cfgApiKey').value.trim().replace(/[^\x20-\x7E]/g, '');
   const base = (document.getElementById('cfgBaseUrl').value.trim() || 'https://api.aiapi.com/v1').replace(/\/$/, '');
   const model = document.getElementById('cfgModel').value.trim() || 'gpt-4o';
   const res = await fetch(`${base}/chat/completions`, {
@@ -879,10 +880,8 @@ async function callLLMJson(sys, usr) {
   const firstBracket = cleaned.search(/[\[{]/);
   if (firstBracket > 0) cleaned = cleaned.slice(firstBracket);
   // 3. 修复模型偶发的重复键 artifact（两种模式）
-  // 模式A：`"key":  key":` → `"key":`
-  cleaned = cleaned.replace(/"(\w+)":\s+\1":/g, '"$1":');
-  // 模式B：`"key":"partial":"key":` → `"key":` （LLM自我纠正写了截断值又重写了键）
-  cleaned = cleaned.replace(/"(\w+)":"[^"]*":"\1":/g, '"$1":');
+  cleaned = cleaned.replace(/"(\w+)":\s+\1":/g, '"$1":');       // 模式A: "key":  key":
+  cleaned = cleaned.replace(/"(\w+)":"[^"]*":"\1":/g, '"$1":'); // 模式B: "key":"partial":"key":
   // 4. 转义字符串值内的原始控制字符（修复 "Bad control character in JSON" 错误）
   cleaned = sanitizeJsonControlChars(cleaned);
   // 5. 直接解析
@@ -943,7 +942,7 @@ async function runRealPipeline(forceTopic) {
   setNodeState('Judge', 'running');
   addLog('JUDGE', 'tag-judge', 'LLM（AiAPI）开始评估选题…');
   try {
-    const sys2 = '你是财经短视频选题专家。对选题按爆款潜力评分（0-100），命中以下法则越多越好：信息差/揭秘、情绪共鸣点、权威解读、反认知观点、常见痛点、替弱势群体发声、说出大众心里话、借势、名人窥探、涨跌偏好、稀缺信息、娱乐性。输出纯JSON（不要代码块）：{"topic":"","score":90,"criteria":["法则1"]}';  // structure字段已移除：下游不使用且易引发LLM重复键问题
+    const sys2 = '你是财经短视频选题专家。对选题按爆款潜力评分（0-100），命中以下法则越多越好：信息差/揭秘、情绪共鸣点、权威解读、反认知观点、常见痛点、替弱势群体发声、说出大众心里话、借势、名人窥探、涨跌偏好、稀缺信息、娱乐性。输出纯JSON（不要代码块）：{"topic":"","score":90,"criteria":["法则1"]}'; // 已移除 structure：下游未使用且易触发 LLM 重复键
     const topicsStr = topics.map((t, i) => `${i+1}. ${t.topic}`).join('\n');
     winner = await callLLMJson(sys2, `对以下选题评分并选出最佳：\n${topicsStr}`);
     addLog('JUDGE', 'tag-judge', `最佳选题 [${winner.score}分]：${winner.topic}`);
@@ -981,9 +980,9 @@ async function runRealPipeline(forceTopic) {
   const STRUCTS   = ['问题前置+层层解答', '场景带入+情绪推进', '结果前置+倒叙还原'];
   const HOOK_TYPES_LIST = ['痛点类', '好奇类', '利益输送类'];
   const sys4_base = '你是财经短视频脚本专家。根据选题和口播素材，生成1个指定风格的完整脚本版本。' +
-    'oral_script必须按本版本角度重新改写（200-250字，口语化，字符串值内禁止原始换行符）。' +
+    '口播稿须按本版本角度重新改写（200-250字，口语化，字符串值内禁止原始换行符）。' +
     '输出纯JSON对象（不要代码块，不要注释，字符串值内禁止原始换行符）：' +
-    '{"version":1,"oral_script":"口播正文200-250字按本版本角度改写",' +
+    '{"version":1,"oral_script":"200-250字口播稿按本版本角度改写",' +
     '"cover":"封面≤12汉字用\\\\n换行分两行","direct_post":"直发文字60-80字",' +
     '"hooks":["钩子1≤25字","钩子2≤25字","钩子3≤25字"],' +
     '"pinned":"置顶评论带emoji","hook_type":"","structure":""}';
