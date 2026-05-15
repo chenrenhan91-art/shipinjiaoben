@@ -977,9 +977,11 @@ async function runRealPipeline(forceTopic) {
   const ANGLES    = ['信息差/揭秘', '情绪共鸣', '利益驱动'];
   const STRUCTS   = ['问题前置+层层解答', '场景带入+情绪推进', '结果前置+倒叙还原'];
   const HOOK_TYPES_LIST = ['痛点类', '好奇类', '利益输送类'];
-  const sys4_base = '你是财经短视频脚本专家。根据选题和口播初稿，生成1个指定风格的完整脚本版本。' +
-    '输出纯JSON对象（不要代码块，不要注释，不要换行在字符串值内）：' +
-    '{"version":1,"cover":"封面≤12汉字用\\\\n换行分两行","direct_post":"直发文字60-80字",' +
+  const sys4_base = '你是财经短视频脚本专家。根据选题和口播素材，生成1个指定风格的完整脚本版本。' +
+    'oral_script必须按本版本角度重新改写（200-250字，口语化，字符串值内禁止原始换行符）。' +
+    '输出纯JSON对象（不要代码块，不要注释，字符串值内禁止原始换行符）：' +
+    '{"version":1,"oral_script":"口播正文200-250字按本版本角度改写",' +
+    '"cover":"封面≤12汉字用\\\\n换行分两行","direct_post":"直发文字60-80字",' +
     '"hooks":["钩子1≤25字","钩子2≤25字","钩子3≤25字"],' +
     '"pinned":"置顶评论带emoji","hook_type":"","structure":""}';
   scripts = [];
@@ -988,11 +990,13 @@ async function runRealPipeline(forceTopic) {
     let done = false;
     for (let attempt = 0; attempt < 2 && !done; attempt++) {
       try {
-        const u4 = `选题：${winner.topic}\n口播初稿：${draft}\n` +
-          `角度：${ANGLES[idx]}，结构：${STRUCTS[idx]}，钩子类型：${HOOK_TYPES_LIST[idx]}，版本号：${idx+1}`;
+        const u4 = `选题：${winner.topic}\n口播素材（按角度改写）：${draft}\n` +
+          `版本${idx+1}角度：${ANGLES[idx]}，结构：${STRUCTS[idx]}，钩子类型：${HOOK_TYPES_LIST[idx]}\n` +
+          `oral_script须围绕"${ANGLES[idx]}"展开，体现本版本独特视角。`;
         const s = await callLLMJson(sys4_base, u4);
         s.version = idx + 1;
         s.hook_type = s.hook_type || HOOK_TYPES_LIST[idx];
+        if (!s.oral_script) s.oral_script = draft; // 兜底：LLM 未输出则用 Agent3 初稿
         scripts.push(s);
         addLog('SCRIPT', 'tag-script', `版本${idx+1} ✓ | 钩子：${s.hook_type}`);
         done = true;
@@ -1003,7 +1007,6 @@ async function runRealPipeline(forceTopic) {
     }
   }
   if (scripts.length === 0) { setNodeState('Script', 'error'); throw new Error('所有版本均生成失败'); }
-  scripts.forEach(s => { s.oral_script = draft; }); // 口播正文附加到每个版本
   addLog('SCRIPT', 'tag-script', `共完成 ${scripts.length} 个版本`);
   setNodeState('Script', 'done');
   await sleep(200);
