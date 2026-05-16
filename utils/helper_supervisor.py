@@ -28,7 +28,7 @@ LAUNCH_AGENT_PATH = Path.home() / "Library" / "LaunchAgents" / f"{LAUNCH_AGENT_L
 DOUYIN_LOGIN_URL = "https://www.douyin.com/?recommend=1"
 DOUK_RELEASE_URL = "https://github.com/JoeanAmier/TikTokDownloader/releases/latest"
 DOUK_COOKIE_HELP_URL = "https://github.com/JoeanAmier/TikTokDownloader/blob/master/docs/Cookie%E8%8E%B7%E5%8F%96%E6%95%99%E7%A8%8B.md"
-HELPER_INSTALL_URL = "https://github.com/chenrenhan91-art/shipinjiaoben/tree/main/scripts"
+HELPER_INSTALL_URL = "https://chenrenhan91-art.github.io/shipinjiaoben/scripts/shipinjiaoben_collector_installer.zip"
 BROWSER_CODES = {
     "arc": "1",
     "chrome": "2",

@@ -374,7 +374,7 @@ select.config-input option { background: var(--bg3); }
       <div class="sidebar-title">抖音授权采集</div>
       <div class="auth-panel">
         <div class="auth-steps">
-          <div class="auth-step"><span class="auth-step-num">1</span><div><strong>安装一次助手</strong>助手会在本机后台运行，以后无需手动启动。</div></div>
+          <div class="auth-step"><span class="auth-step-num">1</span><div><strong>安装一次助手</strong>网页会自动下载一键安装器，双击后即可后台常驻。</div></div>
           <div class="auth-step"><span class="auth-step-num">2</span><div><strong>登录抖音</strong>点击登录，在官方页面完成扫码。</div></div>
           <div class="auth-step"><span class="auth-step-num">3</span><div><strong>检测后生成</strong>系统会自动拉起采集工具并抓取视频数据。</div></div>
         </div>
@@ -386,7 +386,7 @@ select.config-input option { background: var(--bg3); }
           <button class="btn btn-outline btn-sm" onclick="openDouyinLogin()">登录抖音</button>
           <button class="btn btn-outline btn-sm" onclick="importDouyinLoginState()">导入登录状态</button>
           <button class="btn btn-outline btn-sm" onclick="restartDouyinCollector()">重启采集</button>
-          <button class="btn btn-outline btn-sm" onclick="openHelperInstallGuide()">安装助手</button>
+          <button class="btn btn-outline btn-sm" onclick="downloadHelperInstaller(false)">下载一键安装器</button>
         </div>
         <div class="config-row">
           <div class="config-label">已登录的浏览器</div>
@@ -402,10 +402,10 @@ select.config-input option { background: var(--bg3); }
           <div class="config-label">每次最多抓取</div>
           <input class="config-input" id="cfgDouyinLimit" type="number" min="1" max="20" value="6" />
         </div>
-        <div class="auth-note" id="douyinAuthNote">先在所选浏览器登录抖音，再导入登录状态。登录状态只保存在本机采集工具中。</div>
+        <div class="auth-note" id="douyinAuthNote">首次打开会自动下载一键安装器。安装完成后，登录状态和采集工具都只保存在本机。</div>
         <details class="auth-help">
           <summary>为什么还需要本机助手？</summary>
-          <div class="auth-note" style="border-top:0;padding-top:8px">网页不能直接启动电脑里的采集工具，也不能读取抖音登录态。助手安装一次后常驻本机，负责打开登录页、启动采集工具和转发数据。</div>
+          <div class="auth-note" style="border-top:0;padding-top:8px">网页不能静默安装电脑程序，所以会先下载一键安装器。安装器会自动安装后台助手和抖音采集工具，后续网页可直接调用。</div>
         </details>
       </div>
     </div>
@@ -535,7 +535,8 @@ let isRunning = false;
 const DEFAULT_API_BASE = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 const DEFAULT_MODEL = 'qwen3.6-flash';
 const HELPER_BASE = 'http://127.0.0.1:8765';
-const HELPER_INSTALL_URL = 'https://github.com/chenrenhan91-art/shipinjiaoben/tree/main/scripts';
+const HELPER_INSTALLER_URL = 'scripts/shipinjiaoben_collector_installer.zip';
+const HELPER_INSTALLER_KEY = 'shipinjiaoben_collector_installer_downloaded_v2';
 
 // ═══════════════════════════════════
 // 模式切换
@@ -626,9 +627,26 @@ async function openDouyinSearch() {
   }
 }
 
-function openHelperInstallGuide() {
-  window.open(HELPER_INSTALL_URL, '_blank', 'noopener,noreferrer');
-  addLog('SYS', 'tag-sys', '已打开本机采集助手安装文件位置；安装一次后无需手动启动');
+function downloadHelperInstaller(auto=false) {
+  const anchor = document.createElement('a');
+  anchor.href = HELPER_INSTALLER_URL;
+  anchor.download = 'shipinjiaoben_collector_installer.zip';
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  try { localStorage.setItem(HELPER_INSTALLER_KEY, '1'); } catch(e) {}
+  const message = auto
+    ? '已自动下载本机采集助手安装器。解压后双击 Install_Collector_Helper.command 完成安装。'
+    : '已下载本机采集助手安装器。解压后双击 Install_Collector_Helper.command 完成安装。';
+  document.getElementById('douyinAuthNote').textContent = message;
+  addLog('SYS', 'tag-sys', message);
+}
+
+function autoDownloadHelperInstallerOnce() {
+  try {
+    if (localStorage.getItem(HELPER_INSTALLER_KEY) === '1') return;
+  } catch(e) {}
+  downloadHelperInstaller(true);
 }
 
 async function restartDouyinCollector() {
@@ -680,8 +698,9 @@ async function checkDouyinAuth(silent=false) {
     setAuthStatus('bridgeStatus', 'err', '未启动');
     setAuthStatus('douyinApiStatus', 'warn', '等待助手');
     setAuthStatus('douyinSearchStatus', 'warn', '未检测');
-    document.getElementById('douyinAuthNote').textContent = '本机采集助手未运行。首次使用请点击“安装助手”，安装后网页会自动调用它。';
-    if (!silent) addLog('SYS', 'tag-warn', '本机采集助手未运行，请先安装助手');
+    document.getElementById('douyinAuthNote').textContent = '本机采集助手未运行。已为你准备一键安装器，安装完成后刷新网页即可自动调用。';
+    if (!silent) addLog('SYS', 'tag-warn', '本机采集助手未运行，请先安装一键安装器');
+    autoDownloadHelperInstallerOnce();
     return;
   }
   try {
