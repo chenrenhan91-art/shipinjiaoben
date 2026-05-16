@@ -92,20 +92,6 @@ body {
 .config-input:focus { border-color: var(--accent); }
 .config-input::placeholder { color: var(--muted); }
 select.config-input option { background: var(--bg3); }
-.auth-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
-.auth-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
-.auth-pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; border: 1px solid var(--border); color: var(--muted); background: var(--bg3); white-space: nowrap; }
-.auth-pill.ok { color: #4ade80; border-color: rgba(74,222,128,.35); background: rgba(74,222,128,.1); }
-.auth-pill.warn { color: #fbbf24; border-color: rgba(251,191,36,.35); background: rgba(251,191,36,.1); }
-.auth-pill.err { color: #f87171; border-color: rgba(248,113,113,.35); background: rgba(248,113,113,.1); }
-.auth-steps { display: grid; gap: 8px; margin-bottom: 12px; }
-.auth-step { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; font-size: 12px; color: var(--muted); }
-.auth-step-num { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 800; }
-.auth-step strong { display: block; color: var(--text); font-size: 12px; margin-bottom: 2px; }
-.auth-help { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; }
-.auth-help summary { cursor: pointer; font-size: 11px; color: var(--muted); }
-.auth-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 12px; }
-.auth-note { font-size: 11px; line-height: 1.6; color: var(--muted); border-top: 1px solid var(--border); padding-top: 10px; }
 
 /* ── 右侧内容 ── */
 .content { overflow-y: auto; display: flex; flex-direction: column; }
@@ -370,35 +356,6 @@ select.config-input option { background: var(--bg3); }
       </div>
     </div>
 
-    <div class="sidebar-section">
-      <div class="sidebar-title">抖音授权采集</div>
-      <div class="auth-panel">
-        <div class="auth-steps">
-          <div class="auth-step"><span class="auth-step-num">1</span><div><strong>先登录抖音</strong>点击下方按钮，在抖音官方页面扫码登录。</div></div>
-          <div class="auth-step"><span class="auth-step-num">2</span><div><strong>再检测采集</strong>确认本机服务和关键词搜索都可用。</div></div>
-          <div class="auth-step"><span class="auth-step-num">3</span><div><strong>最后运行生成</strong>系统会抓视频、详情、互动数据和热评。</div></div>
-        </div>
-        <div class="auth-row"><span>本机采集服务</span><span class="auth-pill" id="bridgeStatus">未检测</span></div>
-        <div class="auth-row"><span>抖音采集工具</span><span class="auth-pill" id="douyinApiStatus">未检测</span></div>
-        <div class="auth-row"><span>关键词搜索</span><span class="auth-pill" id="douyinSearchStatus">未检测</span></div>
-        <div class="auth-actions">
-          <button class="btn btn-outline btn-sm" onclick="openDouyinLogin()">打开抖音登录</button>
-          <button class="btn btn-primary btn-sm" onclick="checkDouyinAuth()">检测授权</button>
-          <button class="btn btn-outline btn-sm" onclick="openDouyinSearch()">查看抖音搜索</button>
-        </div>
-        <div class="config-row">
-          <div class="config-label">每次最多抓取</div>
-          <input class="config-input" id="cfgDouyinLimit" type="number" min="1" max="20" value="6" />
-        </div>
-        <div class="auth-note" id="douyinAuthNote">建议每次 3-8 条。系统会慢速串行抓取，遇到验证码或平台限制会停止并提示。</div>
-        <details class="auth-help">
-          <summary>本机服务没有启动时怎么办？</summary>
-          <div class="auth-note" style="border-top:0;padding-top:8px">点击下面的按钮，把命令粘贴到终端运行后，再回来检测授权。</div>
-          <button class="btn btn-outline btn-sm" onclick="copyBridgeCommand()" style="margin-top:8px;width:100%">复制本机启动命令</button>
-        </details>
-      </div>
-    </div>
-
   </div>
 
   <!-- 右侧内容 -->
@@ -556,76 +513,6 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function escapeHtml(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-function setAuthStatus(id, state, text) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.className = 'auth-pill ' + (state || '');
-  el.textContent = text;
-}
-
-function getDouyinKeyword() {
-  return document.getElementById('cfgKeyword').value.trim()
-    || document.getElementById('cfgTopic').value.trim()
-    || '财经热点';
-}
-
-function openDouyinLogin() {
-  window.open('https://www.douyin.com/?recommend=1', '_blank', 'noopener,noreferrer');
-  addLog('SYS', 'tag-sys', '已打开抖音官方页面，请在新窗口扫码登录');
-}
-
-function openDouyinSearch() {
-  const keyword = getDouyinKeyword();
-  window.open(`https://www.douyin.com/search/${encodeURIComponent(keyword)}`, '_blank', 'noopener,noreferrer');
-  addLog('SYS', 'tag-sys', `已打开抖音关键词搜索：「${escapeHtml(keyword)}」`);
-}
-
-async function copyBridgeCommand() {
-  const cmd = 'python3 /Users/apple/Desktop/自媒体/ai_agent/local_api.py';
-  try {
-    await navigator.clipboard.writeText(cmd);
-    addLog('SYS', 'tag-sys', '已复制本地桥接服务启动命令');
-  } catch(e) {
-    addLog('SYS', 'tag-warn', `启动命令：${escapeHtml(cmd)}`);
-  }
-}
-
-async function checkDouyinAuth(silent=false) {
-  const keyword = getDouyinKeyword();
-  setAuthStatus('bridgeStatus', 'warn', '检测中');
-  setAuthStatus('douyinApiStatus', 'warn', '检测中');
-  setAuthStatus('douyinSearchStatus', 'warn', '检测中');
-  try {
-    const health = await fetch('http://127.0.0.1:8765/api/health', { signal: AbortSignal.timeout(5000) }).then(r => r.json());
-    setAuthStatus('bridgeStatus', health.ok ? 'ok' : 'err', health.ok ? '可用' : '异常');
-  } catch(e) {
-    setAuthStatus('bridgeStatus', 'err', '未启动');
-    setAuthStatus('douyinApiStatus', 'warn', '未连接');
-    setAuthStatus('douyinSearchStatus', 'warn', '未检测');
-    document.getElementById('douyinAuthNote').textContent = '请先启动本机采集服务，再检测抖音授权状态。';
-    if (!silent) addLog('SYS', 'tag-warn', '本机采集服务未启动：请运行 python3 /Users/apple/Desktop/自媒体/ai_agent/local_api.py');
-    return;
-  }
-  try {
-    const data = await fetch(`http://127.0.0.1:8765/api/douyin/status?keyword=${encodeURIComponent(keyword)}`, {
-      signal: AbortSignal.timeout(15000),
-    }).then(r => r.json());
-    const apiOk = data.douyin_api === 'ok';
-    const searchOk = data.search_probe === 'ok';
-    setAuthStatus('douyinApiStatus', apiOk ? 'ok' : 'err', apiOk ? '已连接' : '需启动');
-    setAuthStatus('douyinSearchStatus', searchOk ? 'ok' : 'warn', searchOk ? '可抓取' : '需登录/重试');
-    document.getElementById('douyinAuthNote').textContent = searchOk
-      ? '状态正常，可以点击“开始生成”抓取抖音爆款内容。'
-      : '如果已扫码登录但仍不可抓取，请确认本机采集工具已启动，并适当降低抓取数量。';
-    if (!silent) addLog('SYS', searchOk ? 'tag-sys' : 'tag-warn', searchOk ? '抖音采集检测通过' : `抖音采集暂不可用：${escapeHtml(data.search_probe || data.douyin_api || '请重新检测')}`);
-  } catch(e) {
-    setAuthStatus('douyinApiStatus', 'err', '检测失败');
-    setAuthStatus('douyinSearchStatus', 'warn', '未确认');
-    document.getElementById('douyinAuthNote').textContent = '采集状态检测失败，请确认本机采集服务已启动。';
-    if (!silent) addLog('SYS', 'tag-warn', `抖音状态检测失败：${escapeHtml(e.message)}`);
-  }
 }
 
 // ═══════════════════════════════════
@@ -1089,8 +976,7 @@ async function fetchUrlContent(url) {
 }
 
 async function fetchViralBridge(keyword, sourceUrl) {
-  const limitInput = document.getElementById('cfgDouyinLimit');
-  const limit = Math.max(1, Math.min(20, parseInt(limitInput?.value || '6', 10) || 6));
+  const limit = 6;
   const resp = await fetch('http://127.0.0.1:8765/api/viral/search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1515,9 +1401,6 @@ function exportScripts() {
   restoreBtn();
 }
 
-window.addEventListener('load', () => {
-  checkDouyinAuth(true);
-});
 </script>
 </body>
 </html>
