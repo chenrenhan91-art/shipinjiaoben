@@ -31,6 +31,12 @@ class Config:
     shipinhao_like_threshold: int = field(default_factory=lambda: int(os.getenv("SHIPINHAO_LIKE_THRESHOLD", "50000")))
     similarity_max: float = 0.20
 
+    # GitHub 抓取工具桥接服务
+    douk_api_base: str = field(default_factory=lambda: os.getenv("DOUK_API_BASE", "http://127.0.0.1:5555"))
+    douk_api_token: str = field(default_factory=lambda: os.getenv("DOUK_API_TOKEN", ""))
+    xhs_api_base: str = field(default_factory=lambda: os.getenv("XHS_API_BASE", "http://127.0.0.1:5556"))
+    local_api_port: int = field(default_factory=lambda: int(os.getenv("LOCAL_API_PORT", "8765")))
+
     # 输出
     scripts_per_topic: int = field(default_factory=lambda: int(os.getenv("SCRIPTS_PER_TOPIC", "5")))
     hooks_per_script: int = field(default_factory=lambda: int(os.getenv("HOOKS_PER_SCRIPT", "3")))

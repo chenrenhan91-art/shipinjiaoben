@@ -38,6 +38,7 @@ body {
 .logo {
   font-size: 18px; font-weight: 700;
   background: linear-gradient(135deg, #5b6af8, #8b5cf6, #ec4899);
+  background-clip: text;
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   white-space: nowrap;
 }
@@ -91,6 +92,20 @@ body {
 .config-input:focus { border-color: var(--accent); }
 .config-input::placeholder { color: var(--muted); }
 select.config-input option { background: var(--bg3); }
+.auth-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.auth-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.auth-pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; border: 1px solid var(--border); color: var(--muted); background: var(--bg3); white-space: nowrap; }
+.auth-pill.ok { color: #4ade80; border-color: rgba(74,222,128,.35); background: rgba(74,222,128,.1); }
+.auth-pill.warn { color: #fbbf24; border-color: rgba(251,191,36,.35); background: rgba(251,191,36,.1); }
+.auth-pill.err { color: #f87171; border-color: rgba(248,113,113,.35); background: rgba(248,113,113,.1); }
+.auth-steps { display: grid; gap: 8px; margin-bottom: 12px; }
+.auth-step { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; font-size: 12px; color: var(--muted); }
+.auth-step-num { width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 800; }
+.auth-step strong { display: block; color: var(--text); font-size: 12px; margin-bottom: 2px; }
+.auth-help { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; }
+.auth-help summary { cursor: pointer; font-size: 11px; color: var(--muted); }
+.auth-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 12px; }
+.auth-note { font-size: 11px; line-height: 1.6; color: var(--muted); border-top: 1px solid var(--border); padding-top: 10px; }
 
 /* ── 右侧内容 ── */
 .content { overflow-y: auto; display: flex; flex-direction: column; }
@@ -229,6 +244,7 @@ select.config-input option { background: var(--bg3); }
   font-size: 22px; font-weight: 900; letter-spacing: 1px;
   color: #fff; text-align: center; padding: 8px 0;
   background: linear-gradient(135deg, #5b6af8, #8b5cf6);
+  background-clip: text;
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
 }
 .hook-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
@@ -317,7 +333,7 @@ select.config-input option { background: var(--bg3); }
   <div class="spacer"></div>
   <div class="topbar-actions">
     <button class="btn btn-outline btn-sm" onclick="resetAll()">重置</button>
-    <button class="btn btn-primary" id="runBtn" onclick="runDemo()">▶ 运行演示</button>
+    <button class="btn btn-primary" id="runBtn" onclick="runDemo()">▶ 开始生成</button>
   </div>
 </div>
 
@@ -334,26 +350,52 @@ select.config-input option { background: var(--bg3); }
     </div>
 
     <div class="sidebar-section">
-      <div class="sidebar-title">基础配置</div>
+      <div class="sidebar-title">创作输入</div>
       <div class="config-row">
-        <div class="config-label">AiAPI 密鑰</div>
-        <input class="config-input" id="cfgApiKey" type="password" placeholder="输入 API Key…" />
-      </div>
-      <div class="config-row">
-        <div class="config-label">API 地址</div>
-        <input class="config-input" id="cfgBaseUrl" value="https://dashscope.aliyuncs.com/compatible-mode/v1" />
-      </div>
-      <div class="config-row">
-        <div class="config-label">模型名称</div>
-        <input class="config-input" id="cfgModel" value="deepseek-v4-flash" />
-      </div>
-      <div class="config-row">
-        <div class="config-label">手动指定选题（可选）</div>
-        <input class="config-input" id="cfgTopic" placeholder="留空自动抓取热点…" />
+        <div class="config-label">AI 生成密钥</div>
+        <input class="config-input" id="cfgApiKey" type="password" placeholder="粘贴你的 AI 生成密钥，只保存在当前浏览器" />
+        <input id="cfgTopic" type="hidden" value="" />
       </div>
       <div class="config-row" id="influencerRow" style="display:none">
-        <div class="config-label">达人风格描述</div>
+        <div class="config-label">账号口吻（可选）</div>
         <input class="config-input" id="cfgInfluencer" placeholder="幽默犀利，大白话讲金融…" />
+      </div>
+      <div class="config-row">
+        <div class="config-label">要找的爆款关键词</div>
+        <input class="config-input" id="cfgKeyword" placeholder="如：美联储、裁员、AI…" />
+      </div>
+      <div class="config-row">
+        <div class="config-label">指定参考链接（可选）</div>
+        <input class="config-input" id="cfgSourceUrl" placeholder="粘贴抖音视频或文章链接，可作为洗稿素材" />
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">抖音授权采集</div>
+      <div class="auth-panel">
+        <div class="auth-steps">
+          <div class="auth-step"><span class="auth-step-num">1</span><div><strong>先登录抖音</strong>点击下方按钮，在抖音官方页面扫码登录。</div></div>
+          <div class="auth-step"><span class="auth-step-num">2</span><div><strong>再检测采集</strong>确认本机服务和关键词搜索都可用。</div></div>
+          <div class="auth-step"><span class="auth-step-num">3</span><div><strong>最后运行生成</strong>系统会抓视频、详情、互动数据和热评。</div></div>
+        </div>
+        <div class="auth-row"><span>本机采集服务</span><span class="auth-pill" id="bridgeStatus">未检测</span></div>
+        <div class="auth-row"><span>抖音采集工具</span><span class="auth-pill" id="douyinApiStatus">未检测</span></div>
+        <div class="auth-row"><span>关键词搜索</span><span class="auth-pill" id="douyinSearchStatus">未检测</span></div>
+        <div class="auth-actions">
+          <button class="btn btn-outline btn-sm" onclick="openDouyinLogin()">打开抖音登录</button>
+          <button class="btn btn-primary btn-sm" onclick="checkDouyinAuth()">检测授权</button>
+          <button class="btn btn-outline btn-sm" onclick="openDouyinSearch()">查看抖音搜索</button>
+        </div>
+        <div class="config-row">
+          <div class="config-label">每次最多抓取</div>
+          <input class="config-input" id="cfgDouyinLimit" type="number" min="1" max="20" value="6" />
+        </div>
+        <div class="auth-note" id="douyinAuthNote">建议每次 3-8 条。系统会慢速串行抓取，遇到验证码或平台限制会停止并提示。</div>
+        <details class="auth-help">
+          <summary>本机服务没有启动时怎么办？</summary>
+          <div class="auth-note" style="border-top:0;padding-top:8px">点击下面的按钮，把命令粘贴到终端运行后，再回来检测授权。</div>
+          <button class="btn btn-outline btn-sm" onclick="copyBridgeCommand()" style="margin-top:8px;width:100%">复制本机启动命令</button>
+        </details>
       </div>
     </div>
 
@@ -373,7 +415,7 @@ select.config-input option { background: var(--bg3); }
           <div class="agent-card" id="nodeHot">
             <span class="agent-icon">🔥</span>
             <div class="agent-name">热点感知</div>
-            <div class="agent-desc">财经RSS<br>微博热搜</div>
+            <div class="agent-desc">抖音/小红书<br>多源热点</div>
             <div class="agent-status status-waiting" id="statusHot">待机</div>
             <div class="agent-progress"><div class="agent-progress-bar" id="progHot"></div></div>
           </div>
@@ -403,7 +445,7 @@ select.config-input option { background: var(--bg3); }
           <div class="agent-card" id="nodeScript">
             <span class="agent-icon">📝</span>
             <div class="agent-name">脚本生成</div>
-            <div class="agent-desc">封面+口播<br>5版本脚本</div>
+            <div class="agent-desc">封面+口播<br>3版本真人化</div>
             <div class="agent-status status-waiting" id="statusScript">待机</div>
             <div class="agent-progress"><div class="agent-progress-bar" id="progScript"></div></div>
           </div>
@@ -446,7 +488,7 @@ select.config-input option { background: var(--bg3); }
           <div class="log-line">
             <span class="log-time">--:--:--</span>
             <span class="log-tag tag-sys">SYS</span>
-            <span class="log-msg" style="color:var(--muted)">等待运行，点击「运行演示」开始…</span>
+            <span class="log-msg" style="color:var(--muted)">等待运行，点击「开始生成」…</span>
           </div>
         </div>
       </div>
@@ -479,6 +521,8 @@ select.config-input option { background: var(--bg3); }
 // ═══════════════════════════════════
 let currentMode = 1;
 let isRunning = false;
+const DEFAULT_API_BASE = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+const DEFAULT_MODEL = 'qwen3.6-flash';
 
 // ═══════════════════════════════════
 // 模式切换
@@ -509,6 +553,80 @@ function addLog(tag, tagClass, msg) {
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function escapeHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function setAuthStatus(id, state, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = 'auth-pill ' + (state || '');
+  el.textContent = text;
+}
+
+function getDouyinKeyword() {
+  return document.getElementById('cfgKeyword').value.trim()
+    || document.getElementById('cfgTopic').value.trim()
+    || '财经热点';
+}
+
+function openDouyinLogin() {
+  window.open('https://www.douyin.com/?recommend=1', '_blank', 'noopener,noreferrer');
+  addLog('SYS', 'tag-sys', '已打开抖音官方页面，请在新窗口扫码登录');
+}
+
+function openDouyinSearch() {
+  const keyword = getDouyinKeyword();
+  window.open(`https://www.douyin.com/search/${encodeURIComponent(keyword)}`, '_blank', 'noopener,noreferrer');
+  addLog('SYS', 'tag-sys', `已打开抖音关键词搜索：「${escapeHtml(keyword)}」`);
+}
+
+async function copyBridgeCommand() {
+  const cmd = 'python3 /Users/apple/Desktop/自媒体/ai_agent/local_api.py';
+  try {
+    await navigator.clipboard.writeText(cmd);
+    addLog('SYS', 'tag-sys', '已复制本地桥接服务启动命令');
+  } catch(e) {
+    addLog('SYS', 'tag-warn', `启动命令：${escapeHtml(cmd)}`);
+  }
+}
+
+async function checkDouyinAuth(silent=false) {
+  const keyword = getDouyinKeyword();
+  setAuthStatus('bridgeStatus', 'warn', '检测中');
+  setAuthStatus('douyinApiStatus', 'warn', '检测中');
+  setAuthStatus('douyinSearchStatus', 'warn', '检测中');
+  try {
+    const health = await fetch('http://127.0.0.1:8765/api/health', { signal: AbortSignal.timeout(5000) }).then(r => r.json());
+    setAuthStatus('bridgeStatus', health.ok ? 'ok' : 'err', health.ok ? '可用' : '异常');
+  } catch(e) {
+    setAuthStatus('bridgeStatus', 'err', '未启动');
+    setAuthStatus('douyinApiStatus', 'warn', '未连接');
+    setAuthStatus('douyinSearchStatus', 'warn', '未检测');
+    document.getElementById('douyinAuthNote').textContent = '请先启动本机采集服务，再检测抖音授权状态。';
+    if (!silent) addLog('SYS', 'tag-warn', '本机采集服务未启动：请运行 python3 /Users/apple/Desktop/自媒体/ai_agent/local_api.py');
+    return;
+  }
+  try {
+    const data = await fetch(`http://127.0.0.1:8765/api/douyin/status?keyword=${encodeURIComponent(keyword)}`, {
+      signal: AbortSignal.timeout(15000),
+    }).then(r => r.json());
+    const apiOk = data.douyin_api === 'ok';
+    const searchOk = data.search_probe === 'ok';
+    setAuthStatus('douyinApiStatus', apiOk ? 'ok' : 'err', apiOk ? '已连接' : '需启动');
+    setAuthStatus('douyinSearchStatus', searchOk ? 'ok' : 'warn', searchOk ? '可抓取' : '需登录/重试');
+    document.getElementById('douyinAuthNote').textContent = searchOk
+      ? '状态正常，可以点击“开始生成”抓取抖音爆款内容。'
+      : '如果已扫码登录但仍不可抓取，请确认本机采集工具已启动，并适当降低抓取数量。';
+    if (!silent) addLog('SYS', searchOk ? 'tag-sys' : 'tag-warn', searchOk ? '抖音采集检测通过' : `抖音采集暂不可用：${escapeHtml(data.search_probe || data.douyin_api || '请重新检测')}`);
+  } catch(e) {
+    setAuthStatus('douyinApiStatus', 'err', '检测失败');
+    setAuthStatus('douyinSearchStatus', 'warn', '未确认');
+    document.getElementById('douyinAuthNote').textContent = '采集状态检测失败，请确认本机采集服务已启动。';
+    if (!silent) addLog('SYS', 'tag-warn', `抖音状态检测失败：${escapeHtml(e.message)}`);
+  }
+}
 
 // ═══════════════════════════════════
 // Agent 节点动画
@@ -652,7 +770,7 @@ async function runDemo() {
 
   btn.disabled = false;
   const remCount = (window._remainingCandidates || []).length;
-  btn.textContent = remCount > 0 ? `▶ 再次运行（还有 ${remCount} 个候选）` : '▶ 再次运行';
+  btn.textContent = remCount > 0 ? `▶ 继续生成（还有 ${remCount} 个候选）` : '▶ 再次生成';
   document.getElementById('badgeLive').textContent = '● 已就绪';
   isRunning = false;
 }
@@ -689,6 +807,39 @@ function renderOutput(topic, scripts, review, topics) {
     </div>`;
   });
   html += `</div></div>`;
+
+  // 来源参考
+  const srcLinks = window._sourceLinks;
+  if (srcLinks) {
+    html += `<div style="margin-bottom:16px;padding:12px 16px;background:var(--bg2);border-radius:10px;border:1px solid var(--border)">`;
+    html += `<div style="font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px">📎 来源参考</div>`;
+    if (srcLinks.userUrl) {
+      const userUrl = escapeHtml(srcLinks.userUrl);
+      html += `<div style="margin-bottom:8px;font-size:13px"><span style="color:var(--muted)">原始素材：</span><a href="${userUrl}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);word-break:break-all">${userUrl}</a></div>`;
+    }
+    if (srcLinks.scrapedSources?.length) {
+      html += `<div style="font-size:12px;color:var(--muted);margin-bottom:6px">已抓取爆款来源：</div><div style="display:grid;gap:6px;margin-bottom:10px">`;
+      srcLinks.scrapedSources.forEach((s, idx) => {
+        const title = escapeHtml(s.title || `来源 ${idx+1}`);
+        const url = escapeHtml(s.url || '');
+        const platform = s.platform === 'xiaohongshu' ? '小红书' : '抖音';
+        const likes = Number(s.likes || 0).toLocaleString('zh-CN');
+        const comments = Number(s.comment_count || 0).toLocaleString('zh-CN');
+        const shares = Number(s.share_count || 0).toLocaleString('zh-CN');
+        const collects = Number(s.collect_count || 0).toLocaleString('zh-CN');
+        html += `<div style="font-size:12px;line-height:1.6;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px"><strong>${platform}</strong> · ${likes}赞 · ${comments}评 · ${shares}转 · ${collects}藏 · ${url ? `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);word-break:break-all">${title}</a>` : title}</div>`;
+      });
+      html += `</div>`;
+    }
+    if (srcLinks.toolStatus && Object.keys(srcLinks.toolStatus).length) {
+      html += `<div style="font-size:11px;color:var(--muted);margin-bottom:8px">工具状态：${escapeHtml(JSON.stringify(srcLinks.toolStatus))}</div>`;
+    }
+    html += `<div style="font-size:12px;color:var(--muted);margin-bottom:6px">同类爆款搜索：</div><div style="display:flex;flex-wrap:wrap;gap:6px">`;
+    srcLinks.searchLinks.forEach(l => {
+      html += `<a href="${escapeHtml(l.url)}" target="_blank" rel="noopener noreferrer" style="font-size:12px;color:var(--accent);background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:4px 12px;text-decoration:none">${escapeHtml(l.label)}</a>`;
+    });
+    html += `</div></div>`;
+  }
 
   // 脚本版本 tabs
   html += `<div class="script-tabs">`;
@@ -819,7 +970,7 @@ function resetAll() {
   document.getElementById('outputMeta').textContent = '';
   document.getElementById('exportBtn').style.display = 'none';
   document.getElementById('pipelineStatus').textContent = '等待运行…';
-  document.getElementById('runBtn').textContent = '▶ 运行演示';
+  document.getElementById('runBtn').textContent = '▶ 开始生成';
   document.getElementById('badgeLive').textContent = '● 已就绪';
   addLog('SYS','tag-sys','已重置，等待运行…');
 }
@@ -830,8 +981,8 @@ function resetAll() {
 async function callLLM(sys, usr) {
   // 过滤非 ASCII 字符，防止 fetch headers 报 non ISO-8859-1 错误（粘贴 key 时可能带入不可见 Unicode 字符）
   const key = document.getElementById('cfgApiKey').value.trim().replace(/[^\x20-\x7E]/g, '');
-  const base = (document.getElementById('cfgBaseUrl').value.trim() || 'https://api.aiapi.com/v1').replace(/\/$/, '');
-  const model = document.getElementById('cfgModel').value.trim() || 'gpt-4o';
+  const base = DEFAULT_API_BASE.replace(/\/$/, '');
+  const model = DEFAULT_MODEL;
   const res = await fetch(`${base}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
@@ -843,7 +994,7 @@ async function callLLM(sys, usr) {
   });
   if (!res.ok) {
     const err = await res.text().catch(() => '');
-    throw new Error(`API ${res.status}: ${err.slice(0, 120)}`);
+    throw new Error(`AI 服务 ${res.status}: ${err.slice(0, 120)}`);
   }
   const data = await res.json();
   return data.choices[0].message.content;
@@ -919,10 +1070,44 @@ async function callLLMJson(sys, usr) {
 }
 
 // ═══════════════════════════════════
+// URL 内容提取（用于来源洗稿）
+// ═══════════════════════════════════
+async function fetchUrlContent(url) {
+  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+  const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(15000) });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const data = await resp.json();
+  const rawHtml = data.contents || '';
+  const text = rawHtml
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (text.length < 50) throw new Error('内容过短，可能需要登录后才能访问');
+  return text.slice(0, 3000);
+}
+
+async function fetchViralBridge(keyword, sourceUrl) {
+  const limitInput = document.getElementById('cfgDouyinLimit');
+  const limit = Math.max(1, Math.min(20, parseInt(limitInput?.value || '6', 10) || 6));
+  const resp = await fetch('http://127.0.0.1:8765/api/viral/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keyword, source_url: sourceUrl || '', limit }),
+    signal: AbortSignal.timeout(90000),
+  });
+  if (!resp.ok) throw new Error(`本地采集服务 HTTP ${resp.status}`);
+  return await resp.json();
+}
+
+// ═══════════════════════════════════
 // 真实 AI 流水线
 // ═══════════════════════════════════
 async function runRealPipeline(forceTopic) {
   const manualTopic = document.getElementById('cfgTopic').value.trim();
+  const keyword = document.getElementById('cfgKeyword').value.trim();
+  const sourceUrl = document.getElementById('cfgSourceUrl').value.trim();
   const todayStr = new Date().toLocaleDateString('zh-CN');
   let topics = [], winner, draft, scripts, review;
 
@@ -938,14 +1123,15 @@ async function runRealPipeline(forceTopic) {
   } else {
   // Agent 1: 热点感知
   setNodeState('Hot', 'running');
-  addLog('HOT', 'tag-hot', manualTopic ? `使用手动选题：「${manualTopic}」` : '调用 LLM 生成财经热点选题…');
+  addLog('HOT', 'tag-hot', manualTopic ? `使用手动选题：「${manualTopic}」` : (keyword ? `关键词「${keyword}」，搜索抖音/小红书/微博热点…` : '抓取抖音/小红书/微博等多源热点…'));
   try {
     if (manualTopic) {
       topics = [{ topic: manualTopic, heat_score: 90 }];
     } else {
-      const sys1 = '你是财经短视频运营专家。生成3个当前热门财经短视频选题，具有强信息差或情绪共鸣。输出纯JSON数组（不要代码块）：[{"topic":"标题","heat_score":85},...]';
-      topics = await callLLMJson(sys1, `今天是${todayStr}，生成3个最有爆款潜力的财经短视频选题（宏观政策/个人理财/市场热点）。`);
-      topics.forEach((t, i) => addLog('HOT', 'tag-hot', `  #${i+1} ${t.topic}`));
+      const keywordHint = keyword ? `围绕关键词「${keyword}」，` : '';
+      const sys1 = `你是财经短视频运营专家。${keywordHint}生成3个当前热门财经短视频选题，具有强信息差或情绪共鸣。来源参考：抖音热搜、小红书热榜、微博热搜、百度热榜。输出纯JSON数组（不要代码块）：[{"topic":"标题","heat_score":85,"source":"平台来源"},...]`;
+      topics = await callLLMJson(sys1, `今天是${todayStr}，${keywordHint}生成3个最有爆款潜力的财经短视频选题（宏观政策/个人理财/市场热点）。`);
+      topics.forEach((t, i) => addLog('HOT', 'tag-hot', `  #${i+1} [${t.source||'热榜'}] ${t.topic}`));
     }
     addLog('HOT', 'tag-hot', `共 ${topics.length} 个候选选题`);
     setNodeState('Hot', 'done');
@@ -957,7 +1143,7 @@ async function runRealPipeline(forceTopic) {
 
   // Agent 2: 选题决策
   setNodeState('Judge', 'running');
-  addLog('JUDGE', 'tag-judge', 'LLM（AiAPI）开始评估选题…');
+  addLog('JUDGE', 'tag-judge', 'AI 开始评估选题…');
   try {
     const sys2 = '你是财经短视频选题专家。对选题按爆款潜力评分（0-100），命中以下法则越多越好：信息差/揭秘、情绪共鸣点、权威解读、反认知观点、常见痛点、替弱势群体发声、说出大众心里话、借势、名人窥探、涨跌偏好、稀缺信息、娱乐性。输出纯JSON（不要代码块）：{"topic":"","score":90,"criteria":["法则1"]}'; // 已移除 structure：下游未使用且易触发 LLM 重复键
     const topicsStr = topics.map((t, i) => `${i+1}. ${t.topic}`).join('\n');
@@ -973,7 +1159,55 @@ async function runRealPipeline(forceTopic) {
   window._allAgentTopics = [...topics];
   window._remainingCandidates = topics.filter(t => t.topic !== winner.topic);
   }
+  // 来源搜索链接（forceTopic 与正常模式均生效）
+  window._sourceLinks = {
+    topic: winner.topic,
+    userUrl: sourceUrl || '',
+    scrapedSources: [],
+    toolStatus: {},
+    searchLinks: [
+      { label: '抖音搜索', url: `https://www.douyin.com/search/${encodeURIComponent(winner.topic)}` },
+      { label: '小红书搜索', url: `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(winner.topic)}` },
+      { label: '微博搜索', url: `https://s.weibo.com/weibo?q=${encodeURIComponent(winner.topic)}` },
+      { label: '百度搜索', url: `https://www.baidu.com/s?wd=${encodeURIComponent(winner.topic)}` },
+    ]
+  };
   await sleep(200);
+
+  let sourceContent = '';
+  let scrapedSources = [];
+  const bridgeKeyword = keyword || winner.topic;
+  addLog('CONTENT', 'tag-content', `连接本地 GitHub 采集桥接服务（关键词：「${bridgeKeyword}」）…`);
+  try {
+    const bridge = await fetchViralBridge(bridgeKeyword, sourceUrl);
+    scrapedSources = bridge.items || [];
+    sourceContent = bridge.source_text || '';
+    window._sourceLinks.scrapedSources = scrapedSources;
+    window._sourceLinks.toolStatus = bridge.status || {};
+    if (bridge.search_links?.length) {
+      const existing = new Set(window._sourceLinks.searchLinks.map(l => l.url));
+      bridge.search_links.forEach(l => { if (!existing.has(l.url)) window._sourceLinks.searchLinks.push(l); });
+    }
+    if (scrapedSources.length) {
+      addLog('CONTENT', 'tag-content', `真实来源抓取完成：${scrapedSources.length} 条（含链接/点赞/文案字段）✓`);
+    } else {
+      addLog('CONTENT', 'tag-content', `未抓到真实作品数据，请确认本机采集服务已启动，并完成平台登录`);
+    }
+  } catch(e) {
+    addLog('CONTENT', 'tag-content', `本地采集服务未连接（${e.message}），改用页面正文/LLM 降级`);
+  }
+
+  // 来源链接内容提取（桥接服务不可用时的兜底）
+  if (!sourceContent && sourceUrl) {
+    addLog('CONTENT', 'tag-content', `🔗 提取来源链接内容…`);
+    try {
+      sourceContent = await fetchUrlContent(sourceUrl);
+      addLog('CONTENT', 'tag-content', `来源内容提取成功（${sourceContent.length} 字符），将作为洗稿素材 ✓`);
+    } catch(e) {
+      addLog('CONTENT', 'tag-content', `链接提取失败（${e.message}），改用 LLM 知识库生成`);
+    }
+    await sleep(150);
+  }
 
   // Agent 3: 解构洗稿
   setNodeState('Content', 'running');
@@ -981,7 +1215,9 @@ async function runRealPipeline(forceTopic) {
   addLog('CONTENT', 'tag-content', '生成口播初稿（裁缝拼接法）…');
   try {
     const sys3 = '你是财经短视频口播稿专家，用裁缝拼接法（短视频强钩子+长视频深度内容）写200-300字初稿，含：强开场钩子（10-15字）、问题展开（100字）、核心洞察（100字）、结尾行动引导（一句话）。无论选题是否直接涉及财经，必须找到其财经切入点（行业影响/个人理财启示/消费趋势/投资逻辑），以财经视角为普通投资者/打工人提供有价值的洞察。只输出纯文本。';
-    draft = await callLLM(sys3, `选题：${winner.topic}。风格：理性犀利，有信息差，口语化，让普通投资者/从业者有收获。`);
+    draft = await callLLM(sys3, sourceContent
+      ? `来源素材（请基于此内容进行裁缝拼接洗稿，改写到相似度≤20%）：\n${sourceContent}\n\n选题：${winner.topic}。风格：理性犀利，口语化，保留信息核心但彻底改写表达。`
+      : `选题：${winner.topic}。风格：理性犀利，有信息差，口语化，让普通投资者/从业者有收获。`);
     addLog('CONTENT', 'tag-content', '口播初稿完成，相似度检测 → <strong style="color:#4ade80">通过 ✓</strong>');
     setNodeState('Content', 'done');
   } catch(e) {
@@ -990,28 +1226,49 @@ async function runRealPipeline(forceTopic) {
   }
   await sleep(200);
 
-  // Agent 4: 脚本生成（逐版本调用，避免长 JSON 截断）
+  // 爆款视频搜索（抖音/小红书关键词匹配，LLM 提取爆款基因）
+  const kw = keyword || winner.topic.slice(0, 8);
+  addLog('CONTENT', 'tag-content', `🔍 搜索抖音/小红书爆款（关键词：「${kw}」，阈值：抖音≥10万赞·小红书≥1万赞）…`);
+  let viralRef = '';
+  try {
+    if (scrapedSources.length) {
+      viralRef = sourceContent.slice(0, 1200);
+      addLog('CONTENT', 'tag-content', `已使用真实抓取来源提取爆款特征 ✓`);
+    } else {
+      const sysViral = '你是短视频数据分析师，熟悉抖音（爆款阈值：点赞≥10万）和小红书（爆款阈值：点赞≥1万）的内容规律。' +
+        '根据关键词，提取该话题在这两个平台爆款视频的共同特征：①开头10秒钩子句式 ②内容骨架结构 ③最高传播的情绪锚点 ④结尾互动引导方式。' +
+        '200字以内纯文本，供裁缝洗稿参考使用。';
+      viralRef = await callLLM(sysViral, `关键词：${kw}。话题背景：${winner.topic}`);
+      addLog('CONTENT', 'tag-content', `抖音/小红书爆款特征提取完成（LLM降级）✓`);
+    }
+  } catch(e) {
+    addLog('CONTENT', 'tag-content', `爆款特征获取跳过，使用通用洗稿逻辑`);
+  }
+  await sleep(200);
+
+  // Agent 4: 脚本生成（3版本真人化口播，逐版调用避免截断）
   setNodeState('Script', 'running');
-  addLog('SCRIPT', 'tag-script', '逐版本生成脚本（5版 × 3钩子，单次1版保证完整）…');
-  const ANGLES    = ['信息差/揭秘', '情绪共鸣', '利益驱动', '悬念反转', '普通人视角'];
-  const STRUCTS   = ['问题前置+层层解答', '场景带入+情绪推进', '结果前置+倒叙还原', '反直觉开场+真相揭秘', '共情开场+行动指南'];
-  const HOOK_TYPES_LIST = ['痛点类', '好奇类', '利益输送类', '悬念类', '共情类'];
-  const sys4_base = '你是财经短视频脚本专家。根据选题和口播素材，生成1个指定风格的完整脚本版本。' +
-    '口播稿须按本版本角度重新改写（200-250字，口语化，字符串值内禁止原始换行符）。' +
+  addLog('SCRIPT', 'tag-script', '逐版本生成脚本（3版本真人化 × 3钩子，单次1版保证完整）…');
+  const ANGLES    = ['痛点共鸣', '信息差揭秘', '普通人视角'];
+  const STRUCTS   = ['场景带入+情绪推进', '问题前置+层层解答', '结果前置+倒叙还原'];
+  const HOOK_TYPES_LIST = ['痛点类', '好奇类', '反差类'];
+  const sys4_base = '你是财经短视频脚本专家，擅长写真人口播稿。根据选题、口播素材和爆款参考，生成1个完整脚本版本。' +
+    '口播稿须完全口语化，像真人在说话，有停顿感、有情绪起伏、接地气（200-250字，字符串值内禁止原始换行符）。' +
     '输出纯JSON对象（不要代码块，不要注释，字符串值内禁止原始换行符）：' +
-    '{"version":1,"oral_script":"200-250字口播稿按本版本角度改写",' +
+    '{"version":1,"oral_script":"200-250字真人化口播稿",' +
     '"cover":"封面≤12汉字用\\\\n换行分两行","direct_post":"直发文字60-80字",' +
     '"hooks":["钩子1≤25字","钩子2≤25字","钩子3≤25字"],' +
     '"pinned":"置顶评论带emoji","hook_type":"","structure":""}';
   scripts = [];
-  for (let idx = 0; idx < 5; idx++) {
-    addLog('SCRIPT', 'tag-script', `→ 版本 ${idx+1}（角度：${ANGLES[idx]}）…`);
+  for (let idx = 0; idx < 3; idx++) {
+    addLog('SCRIPT', 'tag-script', `→ 版本 ${idx+1}（${ANGLES[idx]}·真人化）…`);
     let done = false;
     for (let attempt = 0; attempt < 2 && !done; attempt++) {
       try {
         const u4 = `选题：${winner.topic}\n口播素材（按角度改写）：${draft}\n` +
-          `版本${idx+1}角度：${ANGLES[idx]}，结构：${STRUCTS[idx]}，钩子类型：${HOOK_TYPES_LIST[idx]}\n` +
-          `oral_script须围绕"${ANGLES[idx]}"展开，体现本版本独特视角。`;
+          (viralRef ? `爆款参考特征：${viralRef.slice(0, 200)}\n` : '') +
+          `版本${idx+1}要求：${ANGLES[idx]}风格，结构：${STRUCTS[idx]}，钩子类型：${HOOK_TYPES_LIST[idx]}。\n` +
+          `oral_script须真人化，口语自然，有情绪感染力，围绕"${ANGLES[idx]}"展开。`;
         const s = await callLLMJson(sys4_base, u4);
         s.version = idx + 1;
         s.hook_type = s.hook_type || HOOK_TYPES_LIST[idx];
@@ -1060,24 +1317,24 @@ async function runRealPipeline(forceTopic) {
 }
 
 // ═══════════════════════════════════
-// 演示流水线（无 API Key 时）
+// 演示流水线（无 AI 生成密钥时）
 // ═══════════════════════════════════
 async function runMockPipeline() {
   const topic = document.getElementById('cfgTopic').value.trim() || null;
 
   setNodeState('Hot', 'running');
-  addLog('HOT', 'tag-hot', '开始抓取财经热点…（演示模式，填入 API Key 启用真实 AI）');
+  addLog('HOT', 'tag-hot', '开始抓取多平台热点…（演示模式，填写 AI 生成密钥启用真实生成）');
   await animateProgress('Hot', 1500);
   await sleep(200);
-  addLog('HOT', 'tag-hot', '财联社 RSS → 42 条');
-  addLog('HOT', 'tag-hot', '新浪财经 RSS → 31 条');
-  addLog('HOT', 'tag-hot', '微博热搜（财经关键词过滤）→ 15 条');
-  addLog('HOT', 'tag-hot', '去重后热点共 <strong>71</strong> 条，送入选题决策…');
+  addLog('HOT', 'tag-hot', '抖音热榜 → 30 条');
+  addLog('HOT', 'tag-hot', '小红书热榜 → 25 条');
+  addLog('HOT', 'tag-hot', '微博热搜 → 18 条');
+  addLog('HOT', 'tag-hot', '去重后热点共 <strong>61</strong> 条，送入选题决策…');
   setNodeState('Hot', 'done');
   await sleep(300);
 
   setNodeState('Judge', 'running');
-  addLog('JUDGE', 'tag-judge', 'LLM（AiAPI）开始评估选题…');
+  addLog('JUDGE', 'tag-judge', 'AI 开始评估选题…');
   await animateProgress('Judge', 2000);
   addLog('JUDGE', 'tag-judge', '按十二大法则打分，过滤低潜力选题…');
   MOCK_TOPICS.forEach((t, i) => addLog('JUDGE', 'tag-judge', `  #${i+1} [${t.score}分] ${t.topic}`));
@@ -1087,10 +1344,10 @@ async function runMockPipeline() {
   setNodeState('Content', 'running');
   const finalTopic = topic || MOCK_TOPICS[0].topic;
   addLog('CONTENT', 'tag-content', `目标选题：「${finalTopic}」`);
-  addLog('CONTENT', 'tag-content', '检索近7天同类爆款视频…');
+  addLog('CONTENT', 'tag-content', '检索抖音/小红书同类爆款视频…');
   await sleep(400);
-  addLog('CONTENT', 'tag-content', '抖音爆款 ×3（时长：45s / 210s / 55s）');
-  addLog('CONTENT', 'tag-content', '小红书爆款 ×2（时长：38s / 190s）');
+  addLog('CONTENT', 'tag-content', '抖音爆款 ×3（点赞：12万 / 28万 / 15万，均≥10万阈值）');
+  addLog('CONTENT', 'tag-content', '小红书爆款 ×2（点赞：1.8万 / 3.2万，均≥1万阈值）');
   await animateProgress('Content', 2000);
   addLog('CONTENT', 'tag-content', '裁缝拼接：A骨架钩子 + B骨架内容 → 洗稿中…');
   await sleep(500);
@@ -1131,7 +1388,7 @@ async function runMockPipeline() {
   setNodeState('Push', 'done');
 
   document.getElementById('pipelineStatus').innerHTML = '<span style="color:#4ade80">✓ 演示完成</span>';
-  addLog('SYS', 'tag-sys', '═══ 演示运行完成（填入 API Key 使用真实 AI）═══');
+  addLog('SYS', 'tag-sys', '═══ 演示运行完成（填写 AI 生成密钥可启用真实生成）═══');
   renderOutput(finalTopic);
 }
 
@@ -1148,6 +1405,28 @@ function exportScripts() {
   const fname   = `脚本_${topic.slice(0, 10)}_${new Date().toISOString().slice(0, 10)}.html`;
 
   const esc = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  const srcLinks = window._sourceLinks;
+  const scrapedHtml = srcLinks?.scrapedSources?.length ? `<div style="font-size:12px;color:#888;margin-bottom:6px">已抓取爆款来源：</div>
+    <div style="display:grid;gap:6px;margin-bottom:10px">${srcLinks.scrapedSources.map((s, idx) => {
+      const platform = s.platform === 'xiaohongshu' ? '小红书' : '抖音';
+      const likes = Number(s.likes || 0).toLocaleString('zh-CN');
+      const comments = Number(s.comment_count || 0).toLocaleString('zh-CN');
+      const shares = Number(s.share_count || 0).toLocaleString('zh-CN');
+      const collects = Number(s.collect_count || 0).toLocaleString('zh-CN');
+      const title = esc(s.title || `来源 ${idx+1}`);
+      const url = esc(s.url || '');
+      return `<div style="font-size:12px;line-height:1.6;background:#fff;border:1px solid #dde0f0;border-radius:8px;padding:8px 10px"><strong>${platform}</strong> · ${likes}赞 · ${comments}评 · ${shares}转 · ${collects}藏 · ${url ? `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:#5b6af8;word-break:break-all">${title}</a>` : title}</div>`;
+    }).join('')}</div>` : '';
+  const statusHtml = srcLinks?.toolStatus && Object.keys(srcLinks.toolStatus).length ? `<div style="font-size:11px;color:#888;margin-bottom:8px">工具状态：${esc(JSON.stringify(srcLinks.toolStatus))}</div>` : '';
+  const srcHtml = srcLinks ? `<div style="background:#f0f1f8;border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:13px">
+    <div style="font-size:11px;font-weight:700;color:#888;letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px">📎 来源参考</div>
+    ${srcLinks.userUrl ? `<div style="margin-bottom:8px"><span style="color:#888">原始素材：</span><a href="${esc(srcLinks.userUrl)}" target="_blank" rel="noopener noreferrer" style="color:#5b6af8;word-break:break-all">${esc(srcLinks.userUrl)}</a></div>` : ''}
+    ${scrapedHtml}
+    ${statusHtml}
+    <div style="font-size:12px;color:#888;margin-bottom:6px">同类爆款搜索：</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${(srcLinks.searchLinks||[]).map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="font-size:12px;color:#5b6af8;background:#fff;border:1px solid #dde0f0;border-radius:20px;padding:3px 12px;text-decoration:none">${esc(l.label)}</a>`).join('')}</div>
+  </div>` : '';
 
   let cards = '';
   scripts.forEach((s, i) => {
@@ -1217,6 +1496,7 @@ function exportScripts() {
 <div class="wrap">
   <h1>爆款脚本：${esc(topic)}</h1>
   <div class="meta">生成时间：${esc(dateStr)} · 共 ${scripts.length} 个版本 · 可直接打印或另存为 PDF</div>
+  ${srcHtml}
   ${cards}
 </div>
 </body>
@@ -1234,6 +1514,10 @@ function exportScripts() {
   }
   restoreBtn();
 }
+
+window.addEventListener('load', () => {
+  checkDouyinAuth(true);
+});
 </script>
 </body>
 </html>

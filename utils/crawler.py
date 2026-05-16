@@ -188,6 +188,72 @@ async def fetch_tencent_hot() -> List[HotTopic]:
     return topics
 
 
+async def fetch_douyin_hot() -> List[HotTopic]:
+    """抓取抖音热搜榜（第三方聚合接口，无需 Cookie，失败时优雅降级）"""
+    endpoints = [
+        ("https://tenapi.cn/v2/douyinhot", "data", "name", "hot"),
+        ("https://api.pearktrue.cn/api/douyinhot/", "data", "title", "hot_value"),
+    ]
+    topics: List[HotTopic] = []
+    for url, root, title_key, heat_key in endpoints:
+        if topics:
+            break
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    data = await resp.json(content_type=None)
+            items = data.get(root, []) if isinstance(data, dict) else []
+            for item in (items or [])[:30]:
+                title = clean_text(str(item.get(title_key, "")))
+                heat_raw = str(item.get(heat_key, "0")).replace(",", "").strip() or "0"
+                heat = float(heat_raw) if heat_raw.replace(".", "").isdigit() else 0.0
+                link = str(item.get("url", item.get("link", "")))
+                if title:
+                    topics.append(HotTopic(
+                        title=title,
+                        source="抖音热榜",
+                        url=link,
+                        heat_score=heat,
+                        tags=["热搜", "抖音"],
+                    ))
+        except Exception as exc:
+            print(f"[Crawler] 抖音热榜 {url} 失败: {exc}")
+    return topics
+
+
+async def fetch_xiaohongshu_hot() -> List[HotTopic]:
+    """抓取小红书热榜（第三方聚合接口，无需登录，失败时优雅降级）"""
+    endpoints = [
+        ("https://tenapi.cn/v2/xhshot", "data", "name", "hot"),
+        ("https://api.pearktrue.cn/api/xhshot/", "data", "title", "hot_value"),
+    ]
+    topics: List[HotTopic] = []
+    for url, root, title_key, heat_key in endpoints:
+        if topics:
+            break
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    data = await resp.json(content_type=None)
+            items = data.get(root, []) if isinstance(data, dict) else []
+            for item in (items or [])[:30]:
+                title = clean_text(str(item.get(title_key, "")))
+                heat_raw = str(item.get(heat_key, "0")).replace(",", "").strip() or "0"
+                heat = float(heat_raw) if heat_raw.replace(".", "").isdigit() else 0.0
+                link = str(item.get("url", item.get("link", "")))
+                if title:
+                    topics.append(HotTopic(
+                        title=title,
+                        source="小红书热榜",
+                        url=link,
+                        heat_score=heat,
+                        tags=["热搜", "小红书"],
+                    ))
+        except Exception as exc:
+            print(f"[Crawler] 小红书热榜 {url} 失败: {exc}")
+    return topics
+
+
 def load_viral_videos_from_file(filepath: str) -> List[ViralVideo]:
     """
     从本地 JSON 文件加载爆款视频数据。
@@ -225,13 +291,15 @@ async def fetch_all_hot_topics() -> List[HotTopic]:
     baidu_task = fetch_baidu_hot()
     toutiao_task = fetch_toutiao_hot()
     tencent_task = fetch_tencent_hot()
+    douyin_task = fetch_douyin_hot()
+    xhs_task = fetch_xiaohongshu_hot()
 
-    news, weibo, baidu, toutiao, tencent = await asyncio.gather(
-        news_task, weibo_task, baidu_task, toutiao_task, tencent_task
+    news, weibo, baidu, toutiao, tencent, douyin, xhs = await asyncio.gather(
+        news_task, weibo_task, baidu_task, toutiao_task, tencent_task, douyin_task, xhs_task
     )
 
-    # 全部合并，36氪资讯优先（已经过财经过滤），热搜榜直接全量保留
-    all_topics = news + baidu + toutiao + tencent + weibo
+    # 全部合并，抖音/小红书优先（最贴近短视频受众），36氪资讯次之
+    all_topics = douyin + xhs + news + baidu + toutiao + tencent + weibo
 
     # 全局去重（标题前15字为 key）
     seen, unique = set(), []
