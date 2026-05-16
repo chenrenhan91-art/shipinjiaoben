@@ -374,27 +374,38 @@ select.config-input option { background: var(--bg3); }
       <div class="sidebar-title">抖音授权采集</div>
       <div class="auth-panel">
         <div class="auth-steps">
-          <div class="auth-step"><span class="auth-step-num">1</span><div><strong>先登录抖音</strong>点击下方按钮，在抖音官方页面扫码登录。</div></div>
-          <div class="auth-step"><span class="auth-step-num">2</span><div><strong>再检测采集</strong>确认本机服务和关键词搜索都可用。</div></div>
-          <div class="auth-step"><span class="auth-step-num">3</span><div><strong>最后运行生成</strong>系统会抓视频、详情、互动数据和热评。</div></div>
+          <div class="auth-step"><span class="auth-step-num">1</span><div><strong>安装一次助手</strong>助手会在本机后台运行，以后无需手动启动。</div></div>
+          <div class="auth-step"><span class="auth-step-num">2</span><div><strong>登录抖音</strong>点击登录，在官方页面完成扫码。</div></div>
+          <div class="auth-step"><span class="auth-step-num">3</span><div><strong>检测后生成</strong>系统会自动拉起采集工具并抓取视频数据。</div></div>
         </div>
-        <div class="auth-row"><span>本机采集服务</span><span class="auth-pill" id="bridgeStatus">未检测</span></div>
+        <div class="auth-row"><span>本机采集助手</span><span class="auth-pill" id="bridgeStatus">未检测</span></div>
         <div class="auth-row"><span>抖音采集工具</span><span class="auth-pill" id="douyinApiStatus">未检测</span></div>
         <div class="auth-row"><span>关键词搜索</span><span class="auth-pill" id="douyinSearchStatus">未检测</span></div>
         <div class="auth-actions">
-          <button class="btn btn-outline btn-sm" onclick="openDouyinLogin()">打开抖音登录</button>
-          <button class="btn btn-primary btn-sm" onclick="checkDouyinAuth()">检测授权</button>
-          <button class="btn btn-outline btn-sm" onclick="openDouyinSearch()">查看抖音搜索</button>
+          <button class="btn btn-primary btn-sm" onclick="checkDouyinAuth()">检测采集</button>
+          <button class="btn btn-outline btn-sm" onclick="openDouyinLogin()">登录抖音</button>
+          <button class="btn btn-outline btn-sm" onclick="importDouyinLoginState()">导入登录状态</button>
+          <button class="btn btn-outline btn-sm" onclick="restartDouyinCollector()">重启采集</button>
+          <button class="btn btn-outline btn-sm" onclick="openHelperInstallGuide()">安装助手</button>
+        </div>
+        <div class="config-row">
+          <div class="config-label">已登录的浏览器</div>
+          <select class="config-input" id="cfgDouyinBrowser">
+            <option value="chrome" selected>Chrome</option>
+            <option value="safari">Safari</option>
+            <option value="edge">Edge</option>
+            <option value="arc">Arc</option>
+            <option value="firefox">Firefox</option>
+          </select>
         </div>
         <div class="config-row">
           <div class="config-label">每次最多抓取</div>
           <input class="config-input" id="cfgDouyinLimit" type="number" min="1" max="20" value="6" />
         </div>
-        <div class="auth-note" id="douyinAuthNote">建议每次 3-8 条。系统会慢速串行抓取，遇到验证码或平台限制会停止并提示。</div>
+        <div class="auth-note" id="douyinAuthNote">先在所选浏览器登录抖音，再导入登录状态。登录状态只保存在本机采集工具中。</div>
         <details class="auth-help">
-          <summary>本机服务没有启动时怎么办？</summary>
-          <div class="auth-note" style="border-top:0;padding-top:8px">点击下面的按钮，把命令粘贴到终端运行后，再回来检测授权。</div>
-          <button class="btn btn-outline btn-sm" onclick="copyBridgeCommand()" style="margin-top:8px;width:100%">复制本机启动命令</button>
+          <summary>为什么还需要本机助手？</summary>
+          <div class="auth-note" style="border-top:0;padding-top:8px">网页不能直接启动电脑里的采集工具，也不能读取抖音登录态。助手安装一次后常驻本机，负责打开登录页、启动采集工具和转发数据。</div>
         </details>
       </div>
     </div>
@@ -523,6 +534,8 @@ let currentMode = 1;
 let isRunning = false;
 const DEFAULT_API_BASE = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 const DEFAULT_MODEL = 'qwen3.6-flash';
+const HELPER_BASE = 'http://127.0.0.1:8765';
+const HELPER_INSTALL_URL = 'https://github.com/chenrenhan91-art/shipinjiaoben/tree/main/scripts';
 
 // ═══════════════════════════════════
 // 模式切换
@@ -571,24 +584,85 @@ function getDouyinKeyword() {
     || '财经热点';
 }
 
-function openDouyinLogin() {
-  window.open('https://www.douyin.com/?recommend=1', '_blank', 'noopener,noreferrer');
-  addLog('SYS', 'tag-sys', '已打开抖音官方页面，请在新窗口扫码登录');
+async function callHelper(path, options={}, timeout=10000) {
+  const resp = await fetch(`${HELPER_BASE}${path}`, {
+    ...options,
+    signal: AbortSignal.timeout(timeout),
+  });
+  if (!resp.ok) throw new Error(`本机助手 ${resp.status}`);
+  return await resp.json();
 }
 
-function openDouyinSearch() {
-  const keyword = getDouyinKeyword();
-  window.open(`https://www.douyin.com/search/${encodeURIComponent(keyword)}`, '_blank', 'noopener,noreferrer');
-  addLog('SYS', 'tag-sys', `已打开抖音关键词搜索：「${escapeHtml(keyword)}」`);
+function friendlyCollectorStatus(status) {
+  const raw = String(status || '').toLowerCase();
+  if (!raw) return '未确认';
+  if (raw === 'ok') return '可用';
+  if (raw.includes('502')) return '工具异常';
+  if (raw.includes('500')) return '需重新登录';
+  if (raw.includes('403')) return '需重新登录';
+  if (raw.includes('not_running') || raw.includes('connect')) return '未运行';
+  if (raw.includes('empty')) return '需导入登录';
+  return '需处理';
 }
 
-async function copyBridgeCommand() {
-  const cmd = 'python3 /Users/apple/Desktop/自媒体/ai_agent/local_api.py';
+async function openDouyinLogin() {
   try {
-    await navigator.clipboard.writeText(cmd);
-    addLog('SYS', 'tag-sys', '已复制本地桥接服务启动命令');
+    const data = await callHelper('/api/helper/open-douyin-login', { method: 'POST' }, 8000);
+    addLog('SYS', 'tag-sys', escapeHtml(data.message || '已通过本机助手打开抖音登录页'));
   } catch(e) {
-    addLog('SYS', 'tag-warn', `启动命令：${escapeHtml(cmd)}`);
+    window.open('https://www.douyin.com/?recommend=1', '_blank', 'noopener,noreferrer');
+    addLog('SYS', 'tag-warn', '本机助手未启动，已改为直接打开抖音页面；首次使用请先安装助手');
+  }
+}
+
+async function openDouyinSearch() {
+  const keyword = getDouyinKeyword();
+  try {
+    await callHelper(`/api/helper/open-douyin-search?keyword=${encodeURIComponent(keyword)}`, { method: 'POST' }, 8000);
+    addLog('SYS', 'tag-sys', `已通过本机助手打开抖音搜索：「${escapeHtml(keyword)}」`);
+  } catch(e) {
+    window.open(`https://www.douyin.com/search/${encodeURIComponent(keyword)}`, '_blank', 'noopener,noreferrer');
+    addLog('SYS', 'tag-warn', `本机助手未启动，已改为直接打开抖音搜索：「${escapeHtml(keyword)}」`);
+  }
+}
+
+function openHelperInstallGuide() {
+  window.open(HELPER_INSTALL_URL, '_blank', 'noopener,noreferrer');
+  addLog('SYS', 'tag-sys', '已打开本机采集助手安装文件位置；安装一次后无需手动启动');
+}
+
+async function restartDouyinCollector() {
+  setAuthStatus('douyinApiStatus', 'warn', '启动中');
+  try {
+    const data = await callHelper('/api/helper/restart-douyin', { method: 'POST' }, 35000);
+    setAuthStatus('douyinApiStatus', data.ok ? 'ok' : 'warn', data.ok ? '已启动' : '需配置');
+    document.getElementById('douyinAuthNote').textContent = data.ok
+      ? '采集工具已启动，可以检测并开始生成。'
+      : (data.message || '采集工具暂未进入可用状态，请完成首次安装和登录配置。');
+    addLog('SYS', data.ok ? 'tag-sys' : 'tag-warn', escapeHtml(data.message || '采集工具启动结果已返回'));
+    await checkDouyinAuth(true);
+  } catch(e) {
+    setAuthStatus('douyinApiStatus', 'err', '助手未启动');
+    document.getElementById('douyinAuthNote').textContent = '本机采集助手未运行。首次使用请先点击“安装助手”。';
+    addLog('SYS', 'tag-warn', '本机采集助手未运行，无法自动重启采集工具');
+  }
+}
+
+async function importDouyinLoginState() {
+  const browser = document.getElementById('cfgDouyinBrowser')?.value || 'chrome';
+  setAuthStatus('douyinApiStatus', 'warn', '导入中');
+  setAuthStatus('douyinSearchStatus', 'warn', '等待检测');
+  document.getElementById('douyinAuthNote').textContent = '正在从本机浏览器导入抖音登录状态，请确认已在该浏览器登录抖音。';
+  try {
+    const data = await callHelper(`/api/helper/import-douyin-cookie?browser=${encodeURIComponent(browser)}`, { method: 'POST' }, 90000);
+    setAuthStatus('douyinApiStatus', data.ok ? 'ok' : 'warn', data.ok ? '已导入' : '未读取到');
+    document.getElementById('douyinAuthNote').textContent = data.message || (data.ok ? '登录状态已导入。' : '未读取到登录状态。');
+    addLog('SYS', data.ok ? 'tag-sys' : 'tag-warn', escapeHtml(data.message || '导入登录状态完成'));
+    await checkDouyinAuth(true);
+  } catch(e) {
+    setAuthStatus('douyinApiStatus', 'err', '导入失败');
+    document.getElementById('douyinAuthNote').textContent = '导入失败：请确认本机采集助手已安装，并已在所选浏览器登录抖音。';
+    addLog('SYS', 'tag-warn', `导入抖音登录状态失败：${escapeHtml(e.message)}`);
   }
 }
 
@@ -598,32 +672,37 @@ async function checkDouyinAuth(silent=false) {
   setAuthStatus('douyinApiStatus', 'warn', '检测中');
   setAuthStatus('douyinSearchStatus', 'warn', '检测中');
   try {
-    const health = await fetch('http://127.0.0.1:8765/api/health', { signal: AbortSignal.timeout(5000) }).then(r => r.json());
-    setAuthStatus('bridgeStatus', health.ok ? 'ok' : 'err', health.ok ? '可用' : '异常');
+    const helper = await callHelper('/api/helper/status', {}, 6000);
+    setAuthStatus('bridgeStatus', helper.ok ? 'ok' : 'err', helper.ok ? '已运行' : '异常');
+    const toolOk = Boolean(helper.douyin_tool?.ok);
+    setAuthStatus('douyinApiStatus', toolOk ? 'ok' : 'warn', toolOk ? '已连接' : friendlyCollectorStatus(helper.douyin_tool?.status));
   } catch(e) {
     setAuthStatus('bridgeStatus', 'err', '未启动');
-    setAuthStatus('douyinApiStatus', 'warn', '未连接');
+    setAuthStatus('douyinApiStatus', 'warn', '等待助手');
     setAuthStatus('douyinSearchStatus', 'warn', '未检测');
-    document.getElementById('douyinAuthNote').textContent = '请先启动本机采集服务，再检测抖音授权状态。';
-    if (!silent) addLog('SYS', 'tag-warn', '本机采集服务未启动：请运行 python3 /Users/apple/Desktop/自媒体/ai_agent/local_api.py');
+    document.getElementById('douyinAuthNote').textContent = '本机采集助手未运行。首次使用请点击“安装助手”，安装后网页会自动调用它。';
+    if (!silent) addLog('SYS', 'tag-warn', '本机采集助手未运行，请先安装助手');
     return;
   }
   try {
-    const data = await fetch(`http://127.0.0.1:8765/api/douyin/status?keyword=${encodeURIComponent(keyword)}`, {
-      signal: AbortSignal.timeout(15000),
-    }).then(r => r.json());
+    await callHelper('/api/helper/start', { method: 'POST' }, 35000);
+  } catch(e) {
+    if (!silent) addLog('SYS', 'tag-warn', '已检测到助手，但采集工具未能自动启动');
+  }
+  try {
+    const data = await callHelper(`/api/douyin/status?keyword=${encodeURIComponent(keyword)}`, {}, 35000);
     const apiOk = data.douyin_api === 'ok';
     const searchOk = data.search_probe === 'ok';
-    setAuthStatus('douyinApiStatus', apiOk ? 'ok' : 'err', apiOk ? '已连接' : '需启动');
-    setAuthStatus('douyinSearchStatus', searchOk ? 'ok' : 'warn', searchOk ? '可抓取' : '需登录/重试');
+    setAuthStatus('douyinApiStatus', apiOk ? 'ok' : 'err', apiOk ? '已连接' : friendlyCollectorStatus(data.douyin_api));
+    setAuthStatus('douyinSearchStatus', searchOk ? 'ok' : 'warn', searchOk ? '可抓取' : friendlyCollectorStatus(data.search_probe));
     document.getElementById('douyinAuthNote').textContent = searchOk
       ? '状态正常，可以点击“开始生成”抓取抖音爆款内容。'
-      : '如果已扫码登录但仍不可抓取，请确认本机采集工具已启动，并适当降低抓取数量。';
-    if (!silent) addLog('SYS', searchOk ? 'tag-sys' : 'tag-warn', searchOk ? '抖音采集检测通过' : `抖音采集暂不可用：${escapeHtml(data.search_probe || data.douyin_api || '请重新检测')}`);
+      : '如果已扫码登录但仍不可抓取，请确认选对浏览器，然后点击“导入登录状态”。';
+    if (!silent) addLog('SYS', searchOk ? 'tag-sys' : 'tag-warn', searchOk ? '抖音采集检测通过' : `抖音采集暂不可用：${escapeHtml(friendlyCollectorStatus(data.search_probe || data.douyin_api))}`);
   } catch(e) {
     setAuthStatus('douyinApiStatus', 'err', '检测失败');
     setAuthStatus('douyinSearchStatus', 'warn', '未确认');
-    document.getElementById('douyinAuthNote').textContent = '采集状态检测失败，请确认本机采集服务已启动。';
+    document.getElementById('douyinAuthNote').textContent = '采集状态检测失败，请确认本机采集助手正在运行。';
     if (!silent) addLog('SYS', 'tag-warn', `抖音状态检测失败：${escapeHtml(e.message)}`);
   }
 }
@@ -1091,7 +1170,8 @@ async function fetchUrlContent(url) {
 async function fetchViralBridge(keyword, sourceUrl) {
   const limitInput = document.getElementById('cfgDouyinLimit');
   const limit = Math.max(1, Math.min(20, parseInt(limitInput?.value || '6', 10) || 6));
-  const resp = await fetch('http://127.0.0.1:8765/api/viral/search', {
+  await callHelper('/api/helper/start', { method: 'POST' }, 35000).catch(() => null);
+  const resp = await fetch(`${HELPER_BASE}/api/viral/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ keyword, source_url: sourceUrl || '', limit }),
@@ -1191,7 +1271,7 @@ async function runRealPipeline(forceTopic) {
     if (scrapedSources.length) {
       addLog('CONTENT', 'tag-content', `真实来源抓取完成：${scrapedSources.length} 条（含链接/点赞/文案字段）✓`);
     } else {
-      addLog('CONTENT', 'tag-content', `未抓到真实作品数据，请确认本机采集服务已启动，并完成平台登录`);
+      addLog('CONTENT', 'tag-content', `未抓到真实作品数据，请确认本机采集助手已运行，并完成平台登录`);
     }
   } catch(e) {
     addLog('CONTENT', 'tag-content', `本地采集服务未连接（${e.message}），改用页面正文/LLM 降级`);
