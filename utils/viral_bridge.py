@@ -231,7 +231,7 @@ async def _search_douyin(keyword: str, limit: int, status: dict[str, Any]) -> li
         "source": False,
     }
     try:
-        async with httpx.AsyncClient(trust_env=False) as client:
+        async with httpx.AsyncClient() as client:
             data = await _post_json(client, url, payload, config.douk_api_token)
         items = [i for d in _walk_dicts(data) if (i := _normalize_item(d, "douyin", "TikTokDownloader"))]
         threshold = config.douyin_like_threshold
@@ -253,7 +253,7 @@ async def _detail_douyin_by_id(detail_id: str, status: dict[str, Any]) -> dict[s
     url = f"{config.douk_api_base.rstrip('/')}/douyin/detail"
     payload = {"detail_id": detail_id, "source": False}
     try:
-        async with httpx.AsyncClient(trust_env=False) as client:
+        async with httpx.AsyncClient() as client:
             data = await _post_json(client, url, payload, config.douk_api_token)
         for raw in _walk_dicts(data):
             item = _normalize_item(raw, "douyin", "TikTokDownloader/detail")
@@ -272,7 +272,7 @@ async def _comments_douyin(detail_id: str, status: dict[str, Any]) -> list[str]:
     url = f"{config.douk_api_base.rstrip('/')}/douyin/comment"
     payload = {"detail_id": detail_id, "pages": 1, "cursor": 0, "count": 20, "source": False}
     try:
-        async with httpx.AsyncClient(trust_env=False) as client:
+        async with httpx.AsyncClient() as client:
             data = await _post_json(client, url, payload, config.douk_api_token)
         comments = _extract_comments(data)
         if comments:
@@ -313,7 +313,7 @@ async def check_douyin_status(keyword: str = "测试") -> dict[str, Any]:
         "token_configured": bool(config.douk_api_token),
     }
     try:
-        async with httpx.AsyncClient(trust_env=False) as client:
+        async with httpx.AsyncClient() as client:
             resp = await client.get(f"{config.douk_api_base.rstrip('/')}/docs", timeout=5)
         status["douyin_api"] = "ok" if resp.status_code < 500 else f"HTTP {resp.status_code}"
     except httpx.RequestError as exc:
@@ -323,7 +323,7 @@ async def check_douyin_status(keyword: str = "测试") -> dict[str, Any]:
     probe: dict[str, Any] = {}
     items = await _search_douyin(keyword, 1, probe)
     status["search_probe"] = probe.get("douyin", "empty")
-    status["login_hint"] = "搜索探测成功" if items else "若仍不可抓取，请确认本机采集工具已启动，并在采集工具中完成首次 Cookie 配置。"
+    status["login_hint"] = "搜索探测成功" if items else "若搜索为空/403/502，请在抖音官方页面登录并确认 DouK API Token 配置"
     return status
 
 
@@ -333,7 +333,7 @@ async def _detail_xhs(source_url: str, status: dict[str, Any]) -> list[dict[str,
     url = f"{config.xhs_api_base.rstrip('/')}/xhs/detail"
     payload = {"url": source_url, "download": False, "skip": False}
     try:
-        async with httpx.AsyncClient(trust_env=False) as client:
+        async with httpx.AsyncClient() as client:
             data = await _post_json(client, url, payload)
         items = [i for d in _walk_dicts(data) if (i := _normalize_item(d, "xiaohongshu", "XHS-Downloader"))]
         result = _dedupe(items, 3)
@@ -357,7 +357,7 @@ async def _detail_douyin(source_url: str, status: dict[str, Any]) -> list[dict[s
     url = f"{config.douk_api_base.rstrip('/')}/douyin/detail"
     payload = {"detail_id": match.group(1), "source": False}
     try:
-        async with httpx.AsyncClient(trust_env=False) as client:
+        async with httpx.AsyncClient() as client:
             data = await _post_json(client, url, payload, config.douk_api_token)
         items = [i for d in _walk_dicts(data) if (i := _normalize_item(d, "douyin", "TikTokDownloader"))]
         result = _dedupe(items, 3)
@@ -376,7 +376,7 @@ async def _extract_public_page(source_url: str, status: dict[str, Any]) -> str:
     if not source_url:
         return ""
     try:
-        async with httpx.AsyncClient(follow_redirects=True, trust_env=False) as client:
+        async with httpx.AsyncClient(follow_redirects=True) as client:
             html = await _get_text(client, source_url)
         soup = BeautifulSoup(html, "lxml")
         for tag in soup(["script", "style", "noscript"]):
