@@ -959,20 +959,73 @@ async function callLLMJson(sys, usr) {
 // ═══════════════════════════════════
 // URL 内容提取（用于来源洗稿）
 // ═══════════════════════════════════
-async function fetchUrlContent(url) {
-  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-  const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(15000) });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  const data = await resp.json();
-  const rawHtml = data.contents || '';
-  const text = rawHtml
+function normalizeReferenceUrl(value) {
+  const text = String(value || '').trim();
+  const match = text.match(/https?:\/\/[^\s'"<>，。；、）)】」]+/i);
+  const url = (match ? match[0] : text).trim().replace(/[.,;:!?，。；：！？）)\]】」'"]+$/g, '');
+  return /^https?:\/\//i.test(url) ? url : '';
+}
+
+function htmlToPlainText(raw) {
+  return String(raw || '')
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '')
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  if (text.length < 50) throw new Error('内容过短，可能需要登录后才能访问');
-  return text.slice(0, 3000);
+}
+
+async function fetchUrlContent(urlInput) {
+  const url = normalizeReferenceUrl(urlInput);
+  if (!url) throw new Error('请输入有效的 http/https 参考链接');
+  const errors = [];
+
+  try {
+    const resp = await fetch('http://127.0.0.1:8765/api/source/extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_url: url }),
+      signal: AbortSignal.timeout(35000),
+    });
+    if (!resp.ok) throw new Error(`本机服务 HTTP ${resp.status}`);
+    const data = await resp.json();
+    const text = String(data.source_text || '').trim();
+    if (text.length >= 50) return text.slice(0, 4000);
+    errors.push(data.status?.source_url === 'invalid' ? '链接格式无效' : '本机提取内容为空');
+  } catch(e) {
+    errors.push(`本机提取不可用：${e.message}`);
+  }
+
+  const proxyAttempts = [
+    async () => {
+      const resp = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(15000) });
+      if (!resp.ok) throw new Error(`AllOrigins ${resp.status}`);
+      const data = await resp.json();
+      return htmlToPlainText(data.contents || '');
+    },
+    async () => {
+      const resp = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(15000) });
+      if (!resp.ok) throw new Error(`AllOriginsRaw ${resp.status}`);
+      return htmlToPlainText(await resp.text());
+    },
+    async () => {
+      const resp = await fetch(`https://r.jina.ai/http://${url}`, { signal: AbortSignal.timeout(20000) });
+      if (!resp.ok) throw new Error(`Jina ${resp.status}`);
+      return htmlToPlainText(await resp.text());
+    },
+  ];
+
+  for (const attempt of proxyAttempts) {
+    try {
+      const text = await attempt();
+      if (text.length >= 50) return text.slice(0, 4000);
+      errors.push('公共代理返回内容过短');
+    } catch(e) {
+      errors.push(e.message);
+    }
+  }
+  throw new Error(errors.slice(0, 2).join('；') || '链接内容提取失败');
 }
 
 async function fetchViralBridge(keyword, sourceUrl) {
@@ -993,7 +1046,8 @@ async function fetchViralBridge(keyword, sourceUrl) {
 async function runRealPipeline(forceTopic) {
   const manualTopic = document.getElementById('cfgTopic').value.trim();
   const keyword = document.getElementById('cfgKeyword').value.trim();
-  const sourceUrl = document.getElementById('cfgSourceUrl').value.trim();
+  const rawSourceUrl = document.getElementById('cfgSourceUrl').value.trim();
+  const sourceUrl = normalizeReferenceUrl(rawSourceUrl);
   const todayStr = new Date().toLocaleDateString('zh-CN');
   let topics = [], winner, draft, scripts, review;
 
@@ -1062,12 +1116,32 @@ async function runRealPipeline(forceTopic) {
 
   let sourceContent = '';
   let scrapedSources = [];
+  if (rawSourceUrl && !sourceUrl) {
+    addLog('CONTENT', 'tag-content', '指定参考链接格式无法识别，请粘贴完整 http/https 链接');
+  }
+
+  if (sourceUrl) {
+    addLog('CONTENT', 'tag-content', '优先提取指定参考链接内容…');
+    try {
+      sourceContent = await fetchUrlContent(sourceUrl);
+      addLog('CONTENT', 'tag-content', `指定参考链接提取成功（${sourceContent.length} 字符），将优先作为洗稿素材 ✓`);
+    } catch(e) {
+      addLog('CONTENT', 'tag-content', `指定参考链接提取失败（${e.message}），继续使用平台搜索/LLM 兜底`);
+    }
+    await sleep(150);
+  }
+
   const bridgeKeyword = keyword || winner.topic;
   addLog('CONTENT', 'tag-content', `连接本地 GitHub 采集桥接服务（关键词：「${bridgeKeyword}」）…`);
   try {
     const bridge = await fetchViralBridge(bridgeKeyword, sourceUrl);
     scrapedSources = bridge.items || [];
-    sourceContent = bridge.source_text || '';
+    const bridgeText = bridge.source_text || '';
+    if (!sourceContent) {
+      sourceContent = bridgeText;
+    } else if (bridgeText) {
+      sourceContent = `${sourceContent}\n\n同类爆款参考：\n${bridgeText}`.slice(0, 5000);
+    }
     window._sourceLinks.scrapedSources = scrapedSources;
     window._sourceLinks.toolStatus = bridge.status || {};
     if (bridge.search_links?.length) {
@@ -1081,18 +1155,6 @@ async function runRealPipeline(forceTopic) {
     }
   } catch(e) {
     addLog('CONTENT', 'tag-content', `本地采集服务未连接（${e.message}），改用页面正文/LLM 降级`);
-  }
-
-  // 来源链接内容提取（桥接服务不可用时的兜底）
-  if (!sourceContent && sourceUrl) {
-    addLog('CONTENT', 'tag-content', `🔗 提取来源链接内容…`);
-    try {
-      sourceContent = await fetchUrlContent(sourceUrl);
-      addLog('CONTENT', 'tag-content', `来源内容提取成功（${sourceContent.length} 字符），将作为洗稿素材 ✓`);
-    } catch(e) {
-      addLog('CONTENT', 'tag-content', `链接提取失败（${e.message}），改用 LLM 知识库生成`);
-    }
-    await sleep(150);
   }
 
   // Agent 3: 解构洗稿

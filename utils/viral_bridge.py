@@ -23,6 +23,64 @@ from utils.text_utils import clean_text
 
 DOUYIN_SEARCH_URL = "https://www.douyin.com/search/{keyword}"
 XHS_SEARCH_URL = "https://www.xiaohongshu.com/search_result?keyword={keyword}"
+URL_RE = re.compile(r"https?://[^\s'\"<>，。；、）)】」]+", re.I)
+
+
+def _extract_first_url(value: str) -> str:
+    text = clean_text(value)
+    if not text:
+        return ""
+    match = URL_RE.search(text)
+    url = match.group(0) if match else text
+    url = url.strip().rstrip(".,;:!?，。；：！？）)]】」\"'")
+    return url if re.match(r"^https?://", url, re.I) else ""
+
+
+async def _resolve_source_url(source_url: str, status: dict[str, Any]) -> str:
+    url = _extract_first_url(source_url)
+    if not url:
+        status["source_url"] = "invalid"
+        return ""
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, trust_env=False) as client:
+            resp = await client.get(url, headers=_headers(), timeout=12)
+        resolved = str(resp.url) or url
+        if resolved != url:
+            status["source_resolved_url"] = resolved
+        if resp.status_code >= 400:
+            status.setdefault("source_resolve", f"HTTP {resp.status_code}")
+        return resolved
+    except httpx.RequestError as exc:
+        status.setdefault("source_resolve", f"unavailable: {exc.__class__.__name__}")
+        return url
+
+
+def _readable_text_from_html(html: str) -> str:
+    soup = BeautifulSoup(html or "", "lxml")
+    for tag in soup(["script", "style", "noscript", "svg"]):
+        tag.decompose()
+    meta_parts: list[str] = []
+    for selector in [
+        {"property": "og:title"},
+        {"property": "og:description"},
+        {"name": "description"},
+        {"name": "keywords"},
+    ]:
+        tag = soup.find("meta", attrs=selector)
+        content = tag.get("content", "") if tag else ""
+        if content:
+            meta_parts.append(content)
+    title = soup.title.get_text(" ", strip=True) if soup.title else ""
+    body = soup.get_text(" ", strip=True)
+    return clean_text("\n".join([title, *meta_parts, body]))
+
+
+def _is_useful_public_text(text: str) -> bool:
+    if len(clean_text(text)) < 80:
+        return False
+    blocked_markers = ["验证码", "安全验证", "请完成验证", "enable javascript", "access denied"]
+    lower = text.lower()
+    return not any(marker in lower for marker in blocked_markers)
 
 
 def _headers(token: str = "") -> dict[str, str]:
@@ -328,12 +386,13 @@ async def check_douyin_status(keyword: str = "测试") -> dict[str, Any]:
 
 
 async def _detail_xhs(source_url: str, status: dict[str, Any]) -> list[dict[str, Any]]:
+    source_url = _extract_first_url(source_url)
     if not source_url or "xiaohongshu.com" not in source_url and "xhslink.com" not in source_url:
         return []
     url = f"{config.xhs_api_base.rstrip('/')}/xhs/detail"
     payload = {"url": source_url, "download": False, "skip": False}
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(trust_env=False) as client:
             data = await _post_json(client, url, payload)
         items = [i for d in _walk_dicts(data) if (i := _normalize_item(d, "xiaohongshu", "XHS-Downloader"))]
         result = _dedupe(items, 3)
@@ -349,15 +408,18 @@ async def _detail_xhs(source_url: str, status: dict[str, Any]) -> list[dict[str,
 
 
 async def _detail_douyin(source_url: str, status: dict[str, Any]) -> list[dict[str, Any]]:
+    source_url = _extract_first_url(source_url)
     if not source_url or "douyin.com" not in source_url and "iesdouyin.com" not in source_url:
         return []
-    match = re.search(r"(\d{16,22})", source_url)
+    resolved_url = await _resolve_source_url(source_url, status)
+    match = re.search(r"(\d{16,22})", f"{source_url} {resolved_url}")
     if not match:
+        status.setdefault("douyin_detail", "unavailable: missing detail id")
         return []
     url = f"{config.douk_api_base.rstrip('/')}/douyin/detail"
     payload = {"detail_id": match.group(1), "source": False}
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(trust_env=False) as client:
             data = await _post_json(client, url, payload, config.douk_api_token)
         items = [i for d in _walk_dicts(data) if (i := _normalize_item(d, "douyin", "TikTokDownloader"))]
         result = _dedupe(items, 3)
@@ -373,22 +435,31 @@ async def _detail_douyin(source_url: str, status: dict[str, Any]) -> list[dict[s
 
 
 async def _extract_public_page(source_url: str, status: dict[str, Any]) -> str:
+    source_url = _extract_first_url(source_url)
     if not source_url:
         return ""
+    resolved_url = await _resolve_source_url(source_url, status)
+    urls = [u for i, u in enumerate([resolved_url, source_url]) if u and u not in [resolved_url, source_url][:i]]
     try:
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            html = await _get_text(client, source_url)
-        soup = BeautifulSoup(html, "lxml")
-        for tag in soup(["script", "style", "noscript"]):
-            tag.decompose()
-        title = soup.title.get_text(" ", strip=True) if soup.title else ""
-        body = clean_text(soup.get_text(" ", strip=True))
-        text = clean_text(f"{title}\n{body}")[:3000]
-        if len(text) >= 80:
-            status["public_page"] = "ok"
-            return text
+        async with httpx.AsyncClient(follow_redirects=True, trust_env=False) as client:
+            for url in urls:
+                html = await _get_text(client, url)
+                text = _readable_text_from_html(html)[:3000]
+                if _is_useful_public_text(text):
+                    status["public_page"] = "ok"
+                    return text
     except Exception as exc:
         status["public_page"] = f"unavailable: {exc.__class__.__name__}"
+    for url in urls:
+        try:
+            reader_url = f"https://r.jina.ai/http://{url}"
+            async with httpx.AsyncClient(follow_redirects=True, trust_env=False) as client:
+                text = clean_text(await _get_text(client, reader_url))[:3000]
+            if _is_useful_public_text(text):
+                status["public_page"] = "ok:jina"
+                return text
+        except Exception as exc:
+            status.setdefault("public_page_reader", f"unavailable: {exc.__class__.__name__}")
     return ""
 
 
@@ -409,13 +480,14 @@ def _items_to_source_text(items: list[dict[str, Any]], public_text: str = "") ->
 
 async def search_viral_content(keyword: str, source_url: str = "", limit: int = 6) -> dict[str, Any]:
     keyword = clean_text(keyword)
+    source_url = _extract_first_url(source_url)
     status: dict[str, Any] = {}
     items: list[dict[str, Any]] = []
 
-    if keyword:
-        items.extend(await _search_douyin(keyword, limit, status))
     items.extend(await _detail_douyin(source_url, status))
     items.extend(await _detail_xhs(source_url, status))
+    if keyword:
+        items.extend(await _search_douyin(keyword, limit, status))
     public_text = await _extract_public_page(source_url, status) if source_url else ""
 
     items = await _enrich_douyin_items(_dedupe(items, limit), status)
@@ -437,4 +509,31 @@ async def search_viral_content(keyword: str, source_url: str = "", limit: int = 
             "douyin": "JoeanAmier/TikTokDownloader",
             "xiaohongshu": "JoeanAmier/XHS-Downloader",
         },
+    }
+
+
+async def extract_source_content(source_url: str) -> dict[str, Any]:
+    source_url = _extract_first_url(source_url)
+    status: dict[str, Any] = {}
+    if not source_url:
+        return {
+            "ok": False,
+            "source_url": "",
+            "items": [],
+            "source_text": "",
+            "status": {"source_url": "invalid"},
+        }
+
+    items: list[dict[str, Any]] = []
+    items.extend(await _detail_douyin(source_url, status))
+    items.extend(await _detail_xhs(source_url, status))
+    public_text = await _extract_public_page(source_url, status)
+    items = await _enrich_douyin_items(_dedupe(items, 3), status)
+    source_text = _items_to_source_text(items, public_text)
+    return {
+        "ok": bool(source_text),
+        "source_url": source_url,
+        "items": items,
+        "source_text": source_text,
+        "status": status,
     }

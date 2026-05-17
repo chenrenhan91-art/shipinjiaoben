@@ -13,13 +13,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from config import config
-from utils.viral_bridge import check_douyin_status, search_viral_content
+from utils.viral_bridge import check_douyin_status, extract_source_content, search_viral_content
 
 
 class ViralSearchRequest(BaseModel):
     keyword: str = Field(default="", description="关键词")
     source_url: str = Field(default="", description="抖音/小红书/文章来源链接")
     limit: int = Field(default=6, ge=1, le=20, description="最多返回条数")
+
+
+class SourceExtractRequest(BaseModel):
+    source_url: str = Field(default="", description="抖音/小红书/文章来源链接")
 
 
 app = FastAPI(title="AI Agent Viral Source Bridge", version="1.0.0")
@@ -49,6 +53,11 @@ async def douyin_status(keyword: str = "测试") -> dict:
 @app.post("/api/viral/search")
 async def viral_search(req: ViralSearchRequest) -> dict:
     return await search_viral_content(req.keyword, req.source_url, req.limit)
+
+
+@app.post("/api/source/extract")
+async def source_extract(req: SourceExtractRequest) -> dict:
+    return await extract_source_content(req.source_url)
 
 
 if __name__ == "__main__":
