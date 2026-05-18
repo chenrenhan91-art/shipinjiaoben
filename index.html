@@ -1496,6 +1496,8 @@ function renderPlatformSourceSection(platform={}) {
       ${status.douyin_hot === 'ok' ? '<span class="platform-pill ok">抖音热榜：已接入</span>' : ''}
       ${status.douyin_video_fallback === 'ok' ? '<span class="platform-pill ok">相关视频：按核心数据排序</span>' : ''}
       ${keywordVideoMode ? '<span class="platform-pill ok">视频索引：关键词相关</span>' : ''}
+      ${status.douyin_video_min_likes ? `<span class="platform-pill">热度门槛：≥${Number(status.douyin_video_min_likes).toLocaleString('zh-CN')}赞</span>` : ''}
+      ${status.douyin_video_filtered_low_heat ? `<span class="platform-pill warn">已过滤低热视频：${Number(status.douyin_video_filtered_low_heat).toLocaleString('zh-CN')}条</span>` : ''}
       ${!douyinOnly && status.xiaohongshu_detail ? `<span class="platform-pill">小红书接口：${escapeHtml(status.xiaohongshu_detail)}</span>` : ''}
       ${status.error ? `<span class="platform-pill warn">采集错误：${escapeHtml(status.error)}</span>` : ''}
     </div>`;

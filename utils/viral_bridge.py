@@ -34,6 +34,7 @@ DOUYIN_KEYWORD_GROUPS = {
     "房产": ["房产", "楼市", "房价", "买房", "卖房", "租房", "房贷", "地产", "小区", "物业"],
     "美妆": ["美妆", "护肤", "口红", "面膜", "防晒", "彩妆", "穿搭", "变美", "医美"],
 }
+DOUYIN_MIN_VIDEO_LIKES = 1000
 URL_RE = re.compile(r"https?://[^\s'\"<>，。；、）)】」]+", re.I)
 
 
@@ -319,7 +320,21 @@ def _core_video_score(item: dict[str, Any]) -> int:
     )
 
 
-def _video_search_terms(keyword: str, limit: int = 6) -> list[str]:
+def _video_item_passes_heat(item: dict[str, Any]) -> bool:
+    return int(item.get("likes") or 0) >= DOUYIN_MIN_VIDEO_LIKES
+
+
+def _extract_hashtag_terms(*texts: str, limit: int = 8) -> list[str]:
+    terms: list[str] = []
+    for text in texts:
+        for tag in re.findall(r"#[^#\s，。；、!！?？@]+", clean_text(str(text or ""))):
+            term = clean_text(tag.lstrip("#")).strip(".,;:!?，。；：！？）)]】」\"'")
+            if term and len(term) <= 14 and term not in {"抖音", "热门", "上热门", "DOU"}:
+                terms.append(term)
+    return [term for term in dict.fromkeys(terms) if term][:limit]
+
+
+def _video_search_terms(keyword: str, limit: int = 16) -> list[str]:
     terms = _keyword_terms(keyword) or [clean_text(keyword)]
     return [term for term in dict.fromkeys(terms) if term][:limit]
 
@@ -440,51 +455,73 @@ async def _search_indexed_douyin_candidates(term: str, limit: int, status: dict[
 
 
 async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, status: dict[str, Any]) -> list[dict[str, Any]]:
-    candidates: list[dict[str, str]] = []
+    pending_terms = [term for term in dict.fromkeys(terms) if term]
+    searched_terms: list[str] = []
     term_states: dict[str, str] = {}
-    for term in terms:
-        term_candidates = await _search_indexed_douyin_candidates(term, max(limit, 8), status)
-        term_states[term] = "ok" if term_candidates else "empty"
-        candidates.extend(term_candidates)
-        candidates = _dedupe(candidates, limit * 4)
-        if len(candidates) >= limit * 3:
-            break
-
     items: list[dict[str, Any]] = []
-    for candidate in candidates[: limit * 3]:
-        base = {
-            "platform": "douyin",
-            "source": "公开搜索索引 + DouK详情",
-            "source_type": "video_fallback",
-            "title": candidate.get("title", ""),
-            "url": candidate.get("url") or f"https://www.douyin.com/video/{candidate.get('raw_id', '')}",
-            "likes": 0,
-            "comment_count": 0,
-            "share_count": 0,
-            "collect_count": 0,
-            "duration_seconds": 0,
-            "script": candidate.get("script", ""),
-            "comments_hot": [],
-            "raw_id": candidate.get("raw_id", ""),
-            "search_term": candidate.get("search_term", ""),
-        }
-        detail = await _detail_douyin_by_id(base["raw_id"], status)
-        item = _merge_item(base, detail) if detail else base
-        if detail:
-            item["title"] = detail.get("title") or item.get("title", "")
-            item["script"] = detail.get("script") or item.get("script", "")
-        item["source_type"] = "video_fallback"
-        item["search_term"] = base["search_term"]
-        item["core_score"] = _core_video_score(item)
-        item["detail_resolved"] = bool(detail)
-        if item.get("core_score"):
-            items.append(item)
-        await asyncio.sleep(0.4)
+    seen_ids: set[str] = set()
+    filtered_low_heat = 0
+    detail_checks = 0
+    max_terms = max(18, limit * 4)
+    max_detail_checks = max(30, limit * 5)
+
+    while pending_terms and len(searched_terms) < max_terms and detail_checks < max_detail_checks and len(_dedupe(items, limit)) < limit:
+        term = pending_terms.pop(0)
+        if term in term_states:
+            continue
+        searched_terms.append(term)
+        term_candidates = await _search_indexed_douyin_candidates(term, max(limit * 2, 10), status)
+        term_states[term] = "ok" if term_candidates else "empty"
+        for candidate in term_candidates:
+            raw_id = candidate.get("raw_id", "")
+            if not raw_id or raw_id in seen_ids or detail_checks >= max_detail_checks:
+                continue
+            seen_ids.add(raw_id)
+            detail_checks += 1
+            base = {
+                "platform": "douyin",
+                "source": "公开搜索索引 + DouK详情",
+                "source_type": "video_fallback",
+                "title": candidate.get("title", ""),
+                "url": candidate.get("url") or f"https://www.douyin.com/video/{raw_id}",
+                "likes": 0,
+                "comment_count": 0,
+                "share_count": 0,
+                "collect_count": 0,
+                "duration_seconds": 0,
+                "script": candidate.get("script", ""),
+                "comments_hot": [],
+                "raw_id": raw_id,
+                "search_term": candidate.get("search_term", ""),
+            }
+            detail = await _detail_douyin_by_id(base["raw_id"], status)
+            item = _merge_item(base, detail) if detail else base
+            if detail:
+                item["title"] = detail.get("title") or item.get("title", "")
+                item["script"] = detail.get("script") or item.get("script", "")
+            item["source_type"] = "video_fallback"
+            item["search_term"] = base["search_term"]
+            item["core_score"] = _core_video_score(item)
+            item["detail_resolved"] = bool(detail)
+            related_tags = _extract_hashtag_terms(item.get("title", ""), item.get("script", ""), candidate.get("script", ""))
+            for tag in related_tags:
+                if tag not in term_states and tag not in pending_terms and len(pending_terms) + len(searched_terms) < max_terms:
+                    pending_terms.append(tag)
+            if item.get("core_score") and _video_item_passes_heat(item):
+                items.append(item)
+            elif item.get("core_score"):
+                filtered_low_heat += 1
+            await asyncio.sleep(0.4)
+            if len(_dedupe(items, limit)) >= limit:
+                break
 
     items.sort(key=lambda item: (item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
     result = _dedupe(items, limit)
     status["douyin_index_term_status"] = term_states
+    status["douyin_index_terms_used"] = searched_terms
     status["douyin_index_fallback"] = "ok" if result else "empty"
+    status["douyin_video_min_likes"] = DOUYIN_MIN_VIDEO_LIKES
+    status["douyin_video_filtered_low_heat"] = filtered_low_heat
     return result
 
 
@@ -503,17 +540,19 @@ async def _search_douyin_videos_by_terms(keyword: str, limit: int, status: dict[
             item["source_type"] = "video_fallback"
             item["search_term"] = term
             item["core_score"] = _core_video_score(item)
-        found.extend(term_items)
+        found.extend([item for item in term_items if _video_item_passes_heat(item)])
         if len(_dedupe(found, limit * 2)) >= limit * 2:
             break
     unique = _dedupe(found, limit * 3)
     unique.sort(key=lambda item: (item.get("core_score") or _core_video_score(item), item.get("likes") or 0), reverse=True)
     result = _dedupe(unique, limit)
-    if not result:
-        result = await _search_indexed_douyin_videos_by_terms(terms, limit, status)
+    if len(result) < limit:
+        indexed_items = await _search_indexed_douyin_videos_by_terms(terms, limit, status)
+        result = _dedupe([*result, *indexed_items], limit)
     status["douyin_video_terms"] = terms
     status["douyin_video_term_status"] = term_states
     status["douyin_video_fallback"] = "ok" if result else "empty"
+    status["douyin_video_min_likes"] = DOUYIN_MIN_VIDEO_LIKES
     return result
 
 
