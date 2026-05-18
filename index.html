@@ -1289,8 +1289,14 @@ function formatHeat(value) {
 }
 
 function renderHotSources(topics, meta={}) {
-  topics = topics || [];
-  const activeSource = meta.activeSource || window._activeHotSource || '全部';
+  topics = (topics || []).filter(item => item?.url);
+  const summary = topics.reduce((acc, item) => {
+    const key = String(item.source || '未知来源').split('/')[0];
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  let activeSource = meta.activeSource || window._activeHotSource || '全部';
+  if (activeSource !== '全部' && !summary[activeSource]) activeSource = '全部';
   window._allHotSources = topics;
   window._hotSourceMeta = meta;
   window._activeHotSource = activeSource;
@@ -1308,11 +1314,6 @@ function renderHotSources(topics, meta={}) {
     return;
   }
 
-  const summary = meta.source_summary || topics.reduce((acc, item) => {
-    const key = String(item.source || '未知来源').split('/')[0];
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
   const chips = Object.entries(summary)
     .sort((a, b) => b[1] - a[1])
     .map(([name, count]) => `<button class="source-chip ${activeSource===name?'active':''}" onclick="filterHotSources('${escapeJsArg(name)}')">${escapeHtml(name)} · ${count}</button>`)
@@ -1348,7 +1349,7 @@ function renderHotSources(topics, meta={}) {
     <div class="source-toolbar">
       <div>
         <div class="source-title-main">近期热点信息源</div>
-        <div class="source-stats">共 ${meta.total || topics.length} 条，已展示 ${filteredTopics.length} 条；仅展示当前可返回源头链接的公开热榜和权威资讯。</div>
+        <div class="source-stats">可显示 ${topics.length} 条，当前展示 ${filteredTopics.length} 条；仅展示当前可返回源头链接的公开热榜和权威资讯。</div>
       </div>
       <button class="btn btn-outline btn-sm" onclick="loadHotSources()">刷新</button>
     </div>
