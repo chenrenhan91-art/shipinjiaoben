@@ -771,22 +771,12 @@ async def _detail_douyin(source_url: str, status: dict[str, Any]) -> list[dict[s
     if not match:
         status.setdefault("douyin_detail", "unavailable: missing detail id")
         return []
-    url = f"{config.douk_api_base.rstrip('/')}/douyin/detail"
-    payload = {"detail_id": match.group(1), "source": False}
-    try:
-        async with httpx.AsyncClient(trust_env=False) as client:
-            data = await _post_json(client, url, payload, config.douk_api_token)
-        items = [i for d in _walk_dicts(data) if (i := _normalize_item(d, "douyin", "TikTokDownloader"))]
-        result = _dedupe(items, 3)
-        if result:
-            status["douyin_detail"] = "ok"
-        return result
-    except httpx.HTTPStatusError as exc:
-        status["douyin_detail"] = f"unavailable: HTTP {exc.response.status_code}"
-        return []
-    except httpx.RequestError as exc:
-        status["douyin_detail"] = f"unavailable: {exc.__class__.__name__}"
-        return []
+    detail = await _detail_douyin_by_id(match.group(1), status)
+    if detail:
+        status["douyin_detail"] = "ok"
+        return [detail]
+    status.setdefault("douyin_detail", "empty")
+    return []
 
 
 async def _extract_public_page(source_url: str, status: dict[str, Any]) -> str:
