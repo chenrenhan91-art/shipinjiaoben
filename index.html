@@ -354,6 +354,29 @@ select.config-input option { background: var(--bg3); }
 .helper-action.primary:hover { color: #fff; background: #4a58e8; }
 .helper-status-line { font-size: 11px; color: var(--muted); }
 
+/* ── 源视频拆解过程 ── */
+.rewrite-panel {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px 16px; margin-bottom: 16px;
+}
+.rewrite-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.rewrite-title { font-size: 13px; font-weight: 800; color: var(--text); }
+.rewrite-desc { font-size: 11px; color: var(--muted); line-height: 1.6; margin-top: 2px; }
+.rewrite-badge { font-size: 11px; color: #86efac; border: 1px solid rgba(34,197,94,.35); border-radius: 20px; padding: 3px 8px; white-space: nowrap; }
+.rewrite-flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.rewrite-step { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px; min-height: 142px; }
+.rewrite-step-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.rewrite-step-num { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: #fff; font-size: 11px; font-weight: 800; }
+.rewrite-step-name { font-size: 12px; font-weight: 800; color: var(--text); }
+.rewrite-step-body { color: var(--muted); font-size: 12px; line-height: 1.65; }
+.rewrite-kpis { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.rewrite-kpi { font-size: 10px; color: #a78bfa; background: rgba(139,92,246,.12); border: 1px solid rgba(139,92,246,.2); border-radius: 20px; padding: 2px 6px; }
+.rewrite-before-after { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.rewrite-textbox { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.rewrite-textbox-label { font-size: 11px; color: var(--muted); font-weight: 800; margin-bottom: 6px; }
+.rewrite-textbox-text { font-size: 12px; line-height: 1.75; color: var(--text); white-space: pre-wrap; }
+@media (max-width: 760px) { .rewrite-before-after { grid-template-columns: 1fr; } }
+
 
 
 /* ── 滚动条 ── */
@@ -911,6 +934,96 @@ async function runDemo() {
 // ═══════════════════════════════════
 // 渲染输出
 // ═══════════════════════════════════
+function compactText(value, max=160) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+function sourceStatsText(item={}) {
+  const parts = [];
+  const likes = Number(item.likes || 0);
+  const comments = Number(item.comment_count || 0);
+  const shares = Number(item.share_count || 0);
+  const collects = Number(item.collect_count || 0);
+  if (likes) parts.push(`${likes.toLocaleString('zh-CN')}赞`);
+  if (comments) parts.push(`${comments.toLocaleString('zh-CN')}评`);
+  if (shares) parts.push(`${shares.toLocaleString('zh-CN')}转`);
+  if (collects) parts.push(`${collects.toLocaleString('zh-CN')}藏`);
+  return parts.join(' · ') || '已抓取作品数据';
+}
+
+function extractSourceSignals(item={}, winnerTopic='') {
+  const signals = [];
+  const text = `${item.title || ''} ${item.script || ''}`;
+  const tags = text.match(/#[^#\s，。；、]+/g) || [];
+  tags.slice(0, 3).forEach(tag => signals.push(tag));
+  if (Number(item.likes || 0) >= 100000) signals.push('高赞验证');
+  if (Number(item.share_count || 0) >= 10000) signals.push('强转发点');
+  if (Number(item.collect_count || 0) >= 10000) signals.push('高收藏信息');
+  if (winnerTopic) signals.push(compactText(winnerTopic, 12));
+  return [...new Set(signals)].slice(0, 5);
+}
+
+function renderRewriteProcessPanel(topic, scripts=[]) {
+  const trace = window._rewriteTrace || {};
+  const srcLinks = window._sourceLinks || {};
+  const sources = trace.sources?.length ? trace.sources : (srcLinks.scrapedSources || []);
+  if (!sources.length && !trace.draft) return '';
+
+  const mainSource = sources[0] || {};
+  const firstScript = scripts[0] || trace.finalScript || {};
+  const sourceTitle = compactText(mainSource.title || topic || '源视频文案', 86);
+  const sourceScript = compactText(mainSource.script || trace.sourceContent || '源视频文案、评论和互动数据会在这里汇总。', 220);
+  const signals = extractSourceSignals(mainSource, topic);
+  const draft = compactText(trace.draft || firstScript.oral_script || '', 220);
+  const finalOral = compactText(firstScript.oral_script || trace.draft || '', 220);
+  const viralRef = compactText(trace.viralRef || '提取开头钩子、内容骨架、情绪锚点和互动引导方式。', 150);
+  const sourceCount = sources.length || 1;
+
+  const signalHtml = signals.length
+    ? `<div class="rewrite-kpis">${signals.map(item => `<span class="rewrite-kpi">${escapeHtml(item)}</span>`).join('')}</div>`
+    : '';
+
+  return `<div class="rewrite-panel">
+    <div class="rewrite-head">
+      <div>
+        <div class="rewrite-title">源视频拆解过程</div>
+        <div class="rewrite-desc">展示当前热点源视频如何被拆成爆款要素，再重组为新的口播脚本。</div>
+      </div>
+      <span class="rewrite-badge">${sourceCount} 条源素材</span>
+    </div>
+    <div class="rewrite-flow">
+      <div class="rewrite-step">
+        <div class="rewrite-step-top"><span class="rewrite-step-num">1</span><span class="rewrite-step-name">抓取源视频</span></div>
+        <div class="rewrite-step-body"><strong>${escapeHtml(sourceTitle)}</strong><br>${escapeHtml(sourceStatsText(mainSource))}</div>
+        ${signalHtml}
+      </div>
+      <div class="rewrite-step">
+        <div class="rewrite-step-top"><span class="rewrite-step-num">2</span><span class="rewrite-step-name">拆解爆款点</span></div>
+        <div class="rewrite-step-body">${escapeHtml(viralRef)}</div>
+      </div>
+      <div class="rewrite-step">
+        <div class="rewrite-step-top"><span class="rewrite-step-num">3</span><span class="rewrite-step-name">裁缝洗稿</span></div>
+        <div class="rewrite-step-body">保留事实和信息密度，重写表达顺序、口语节奏和情绪推进，避免照搬源文案。</div>
+      </div>
+      <div class="rewrite-step">
+        <div class="rewrite-step-top"><span class="rewrite-step-num">4</span><span class="rewrite-step-name">生成新口播</span></div>
+        <div class="rewrite-step-body">输出多版本真人口播，并经过合规、口语化和专业校验。</div>
+      </div>
+    </div>
+    <div class="rewrite-before-after">
+      <div class="rewrite-textbox">
+        <div class="rewrite-textbox-label">源文案片段</div>
+        <div class="rewrite-textbox-text">${escapeHtml(sourceScript)}</div>
+      </div>
+      <div class="rewrite-textbox">
+        <div class="rewrite-textbox-label">洗稿初稿 / 成稿方向</div>
+        <div class="rewrite-textbox-text">${escapeHtml(draft || finalOral || '生成后会展示新的口播表达。')}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
 function renderOutput(topic, scripts, review, topics) {
   scripts = scripts || MOCK_SCRIPTS;
   review = review || MOCK_REVIEW;
@@ -983,6 +1096,8 @@ function renderOutput(topic, scripts, review, topics) {
     });
     html += `</div></div>`;
   }
+
+  html += renderRewriteProcessPanel(safeTopic, scripts);
 
   // 脚本版本 tabs
   html += `<div class="script-tabs">`;
@@ -1958,6 +2073,13 @@ async function runRealPipeline(forceTopic) {
   } catch(e) {
     addLog('CONTENT', 'tag-content', `爆款特征获取跳过，使用通用洗稿逻辑`);
   }
+  window._rewriteTrace = {
+    topic: winner.topic,
+    sources: scrapedSources.slice(0, 3),
+    sourceContent: sourceContent.slice(0, 1800),
+    draft,
+    viralRef,
+  };
   await sleep(200);
 
   // Agent 4: 脚本生成（3版本真人化口播，逐版调用避免截断）
@@ -1997,6 +2119,7 @@ async function runRealPipeline(forceTopic) {
     }
   }
   if (scripts.length === 0) { setNodeState('Script', 'error'); throw new Error('所有版本均生成失败'); }
+  window._rewriteTrace = { ...(window._rewriteTrace || {}), finalScript: scripts[0] };
   addLog('SCRIPT', 'tag-script', `共完成 ${scripts.length} 个版本`);
   setNodeState('Script', 'done');
   await sleep(200);
@@ -2103,6 +2226,22 @@ async function runMockPipeline() {
 
   document.getElementById('pipelineStatus').innerHTML = '<span style="color:#4ade80">✓ 演示完成</span>';
   addLog('SYS', 'tag-sys', '═══ 演示运行完成（填写 AI 生成密钥可启用真实生成）═══');
+  window._rewriteTrace = {
+    topic: finalTopic,
+    sources: [{
+      platform: 'douyin',
+      title: finalTopic,
+      likes: 280000,
+      comment_count: 6400,
+      share_count: 18000,
+      collect_count: 42000,
+      script: '源视频用强问题开头，先抛出普通人关心的痛点，再用数据和案例解释背后的财经逻辑，最后用一句互动引导评论。',
+    }],
+    sourceContent: '源视频用强问题开头，先抛出普通人关心的痛点，再用数据和案例解释背后的财经逻辑，最后用一句互动引导评论。',
+    draft: '把源视频的信息密度保留下来，但换成新的口语表达：先用一句反问抓住注意力，再讲清楚影响路径，最后落到普通人的行动启发。',
+    viralRef: '拆解出强钩子、问题前置、数据解释、情绪共鸣和评论互动五个爆款要素。',
+    finalScript: MOCK_SCRIPTS[0],
+  };
   renderOutput(finalTopic);
 }
 
