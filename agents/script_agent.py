@@ -8,7 +8,7 @@ from typing import List
 from agents.base_agent import BaseAgent
 from data_models import TopicReport, GeneratedScripts, ScriptVersion, OralScript
 from utils.llm import chat_json
-from utils.text_utils import check_cover_length
+from utils.text_utils import check_cover_length, oral_length_instruction, oral_length_profile
 from prompts.system_prompts import SCRIPT_GEN_SYSTEM, SCRIPT_GEN_USER
 
 
@@ -23,6 +23,7 @@ class ScriptAgent(BaseAgent):
         topic_report: TopicReport,
     ) -> GeneratedScripts:
         self.log(f"生成脚本：{topic[:20]}…")
+        length_profile = oral_length_profile(oral_draft)
 
         user_msg = SCRIPT_GEN_USER.format(
             topic=topic,
@@ -30,6 +31,7 @@ class ScriptAgent(BaseAgent):
                 topic_report.model_dump(), ensure_ascii=False, indent=2
             ),
             oral_draft=oral_draft[:2000],
+            length_instruction=oral_length_instruction(length_profile),
         )
 
         data = await chat_json(SCRIPT_GEN_SYSTEM, user_msg)

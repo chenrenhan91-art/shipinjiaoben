@@ -939,6 +939,46 @@ function compactText(value, max=160) {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
+function countOralChars(value) {
+  const text = String(value || '')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/\s+/g, '');
+  return [...text].filter(ch => /[\u3400-\u9fffA-Za-z0-9]/.test(ch)).length;
+}
+
+function extractPrimarySourceCopy(sources=[], sourceContent='') {
+  const sourceWithScript = (sources || []).find(item => countOralChars(item?.script) >= 30);
+  if (sourceWithScript) return String(sourceWithScript.script || '').trim();
+  const content = String(sourceContent || '').trim();
+  const materialMatch = content.match(/文案\/字幕素材：([\s\S]*?)(?:\n热评：|\n来源\d+｜|$)/);
+  if (materialMatch && countOralChars(materialMatch[1]) >= 30) return materialMatch[1].trim();
+  if ((sources || []).length) return '';
+  return content;
+}
+
+function buildOralLengthProfile(sources=[], sourceContent='') {
+  const sourceCopy = extractPrimarySourceCopy(sources, sourceContent);
+  const sourceChars = countOralChars(sourceCopy);
+  const hasReference = sourceChars >= 30;
+  const target = hasReference ? sourceChars : 240;
+  const lowerRatio = target < 80 ? 0.85 : 0.9;
+  const upperRatio = target < 80 ? 1.25 : 1.15;
+  const min = Math.max(20, Math.round(target * lowerRatio));
+  const max = Math.max(min + 10, Math.round(target * upperRatio));
+  return { sourceCopy, sourceChars, hasReference, target, min, max };
+}
+
+function oralLengthInstruction(profile) {
+  if (!profile?.hasReference) return '未抓到足够长的原视频文案时，口播稿保持自然完整即可，避免所有版本机械写成同一长度。';
+  return `原视频文案有效长度约${profile.sourceChars}字；新口播稿必须控制在${profile.min}-${profile.max}字之间，整体长度要接近原文案，不能统一写成固定字数。`;
+}
+
+function oralLengthOutOfRange(text, profile) {
+  if (!profile?.hasReference) return false;
+  const chars = countOralChars(text);
+  return chars < profile.min || chars > profile.max;
+}
+
 function sourceStatsText(item={}) {
   const parts = [];
   const likes = Number(item.likes || 0);
@@ -1150,6 +1190,7 @@ function renderOutput(topic, scripts, review, topics) {
     html += `<div class="meta-row">
       <span class="meta-chip">结构：<span>${s.structure||''}</span></span>
       <span class="meta-chip">钩子：<span>${s.hook_type||''}</span></span>
+      ${s.oral_script ? `<span class="meta-chip">字数：<span>${countOralChars(s.oral_script)}字${s.target_length ? ` / 目标${escapeHtml(s.target_length)}字` : ''}</span></span>` : ''}
     </div></div></div>`;
 
     html += `<div class="field-block">
@@ -1911,7 +1952,7 @@ async function runRealPipeline(forceTopic) {
   const keyword = document.getElementById('cfgKeyword').value.trim();
   const rawSourceUrl = document.getElementById('cfgSourceUrl').value.trim();
   const sourceUrl = normalizeReferenceUrl(rawSourceUrl);
-  let topics = [], winner, draft, scripts, review;
+  let topics = [], winner, draft, scripts, review, lengthProfile;
 
   if (forceTopic) {
     // 候选模式：跳过 Agent1&2，复用上一轮抓取的候选列表
@@ -2042,15 +2083,22 @@ async function runRealPipeline(forceTopic) {
     addLog('CONTENT', 'tag-content', `本地采集服务未连接（${e.message}），改用页面正文/LLM 降级`);
   }
 
+  lengthProfile = buildOralLengthProfile(scrapedSources, sourceContent);
+  if (lengthProfile.hasReference) {
+    addLog('CONTENT', 'tag-content', `源视频文案约 ${lengthProfile.sourceChars} 字，本轮口播目标长度：${lengthProfile.min}-${lengthProfile.max} 字`);
+  } else {
+    addLog('CONTENT', 'tag-content', '未抓到足够长的源视频文案，口播长度将按内容自然展开');
+  }
+
   // Agent 3: 解构洗稿
   setNodeState('Content', 'running');
   addLog('CONTENT', 'tag-content', `目标选题：「${winner.topic}」`);
   addLog('CONTENT', 'tag-content', '生成口播初稿（裁缝拼接法）…');
   try {
-    const sys3 = '你是财经短视频口播稿专家，用裁缝拼接法（短视频强钩子+长视频深度内容）写200-300字初稿，含：强开场钩子（10-15字）、问题展开（100字）、核心洞察（100字）、结尾行动引导（一句话）。无论选题是否直接涉及财经，必须找到其财经切入点（行业影响/个人理财启示/消费趋势/投资逻辑），以财经视角为普通投资者/打工人提供有价值的洞察。只输出纯文本。';
+    const sys3 = '你是财经短视频口播稿专家，用裁缝拼接法（短视频强钩子+长视频深度内容）写原创初稿。必须先参考用户给出的原视频文案长度约束，再安排开场钩子、问题展开、核心洞察和结尾行动引导；不得把所有口播稿统一写成固定字数。无论选题是否直接涉及财经，必须找到其财经切入点（行业影响/个人理财启示/消费趋势/投资逻辑），以财经视角为普通投资者/打工人提供有价值的洞察。只输出纯文本。';
     draft = await callLLM(sys3, sourceContent
-      ? `来源素材（请基于此内容进行裁缝拼接洗稿，改写到相似度≤20%）：\n${sourceContent}\n\n选题：${winner.topic}。风格：理性犀利，口语化，保留信息核心但彻底改写表达。`
-      : `选题：${winner.topic}。风格：理性犀利，有信息差，口语化，让普通投资者/从业者有收获。`);
+      ? `来源素材（请基于此内容进行裁缝拼接洗稿，改写到相似度≤20%）：\n${sourceContent}\n\n选题：${winner.topic}。${oralLengthInstruction(lengthProfile)}风格：理性犀利，口语化，保留信息核心但彻底改写表达。`
+      : `选题：${winner.topic}。${oralLengthInstruction(lengthProfile)}风格：理性犀利，有信息差，口语化，让普通投资者/从业者有收获。`);
     addLog('CONTENT', 'tag-content', '口播初稿完成，相似度检测 → <strong style="color:#4ade80">通过 ✓</strong>');
     setNodeState('Content', 'done');
   } catch(e) {
@@ -2081,6 +2129,7 @@ async function runRealPipeline(forceTopic) {
     topic: winner.topic,
     sources: scrapedSources.slice(0, 3),
     sourceContent: sourceContent.slice(0, 1800),
+    lengthProfile,
     draft,
     viralRef,
   };
@@ -2093,9 +2142,9 @@ async function runRealPipeline(forceTopic) {
   const STRUCTS   = ['场景带入+情绪推进', '问题前置+层层解答', '结果前置+倒叙还原'];
   const HOOK_TYPES_LIST = ['痛点类', '好奇类', '反差类'];
   const sys4_base = '你是财经短视频脚本专家，擅长写真人口播稿。根据选题、口播素材和爆款参考，生成1个完整脚本版本。' +
-    '口播稿须完全口语化，像真人在说话，有停顿感、有情绪起伏、接地气（200-250字，字符串值内禁止原始换行符）。' +
+    `口播稿须完全口语化，像真人在说话，有停顿感、有情绪起伏、接地气；${oralLengthInstruction(lengthProfile)}字符串值内禁止原始换行符。` +
     '输出纯JSON对象（不要代码块，不要注释，字符串值内禁止原始换行符）：' +
-    '{"version":1,"oral_script":"200-250字真人化口播稿",' +
+    '{"version":1,"oral_script":"按原视频文案长度生成的真人化口播稿",' +
     '"cover":"封面≤12汉字用\\\\n换行分两行","direct_post":"直发文字60-80字",' +
     '"hooks":["钩子1≤25字","钩子2≤25字","钩子3≤25字"],' +
     '"pinned":"置顶评论带emoji","hook_type":"","structure":""}';
@@ -2105,16 +2154,26 @@ async function runRealPipeline(forceTopic) {
     let done = false;
     for (let attempt = 0; attempt < 2 && !done; attempt++) {
       try {
+        const retryLengthNote = attempt > 0 && lengthProfile?.hasReference
+          ? `\n长度复核：上次口播字数不合格，本次 oral_script 必须落在 ${lengthProfile.min}-${lengthProfile.max} 字之间。`
+          : '';
         const u4 = `选题：${winner.topic}\n口播素材（按角度改写）：${draft}\n` +
           (viralRef ? `爆款参考特征：${viralRef.slice(0, 200)}\n` : '') +
           `版本${idx+1}要求：${ANGLES[idx]}风格，结构：${STRUCTS[idx]}，钩子类型：${HOOK_TYPES_LIST[idx]}。\n` +
-          `oral_script须真人化，口语自然，有情绪感染力，围绕"${ANGLES[idx]}"展开。`;
+          `${oralLengthInstruction(lengthProfile)}\n` +
+          `oral_script须真人化，口语自然，有情绪感染力，围绕"${ANGLES[idx]}"展开。${retryLengthNote}`;
         const s = await callLLMJson(sys4_base, u4);
         s.version = idx + 1;
         s.hook_type = s.hook_type || HOOK_TYPES_LIST[idx];
         if (!s.oral_script) s.oral_script = draft; // 兜底：LLM 未输出则用 Agent3 初稿
+        if (oralLengthOutOfRange(s.oral_script, lengthProfile) && attempt === 0) {
+          const actualChars = countOralChars(s.oral_script);
+          throw new Error(`口播长度 ${actualChars} 字，不在 ${lengthProfile.min}-${lengthProfile.max} 字范围内`);
+        }
+        s.source_length = lengthProfile?.sourceChars || 0;
+        s.target_length = lengthProfile?.hasReference ? `${lengthProfile.min}-${lengthProfile.max}` : '';
         scripts.push(s);
-        addLog('SCRIPT', 'tag-script', `版本${idx+1} ✓ | 钩子：${s.hook_type}`);
+        addLog('SCRIPT', 'tag-script', `版本${idx+1} ✓ | 钩子：${s.hook_type} | 口播${countOralChars(s.oral_script)}字`);
         done = true;
       } catch(e) {
         if (attempt === 0) addLog('SCRIPT', 'tag-script', `版本${idx+1} 首次失败，重试…`);

@@ -14,6 +14,7 @@ from prompts.system_prompts import (
     DECONSTRUCT_SYSTEM, DECONSTRUCT_USER,
     REWRITE_SYSTEM, REWRITE_USER,
 )
+from utils.text_utils import oral_length_instruction, oral_length_profile
 
 
 class ContentAgent(BaseAgent):
@@ -64,6 +65,7 @@ class ContentAgent(BaseAgent):
         topic: str,
         genes: List[ViralGene],
         topic_report: Optional[TopicReport] = None,
+        source_text: str = "",
     ) -> str:
         """
         裁缝拼接洗稿：
@@ -86,6 +88,7 @@ class ContentAgent(BaseAgent):
                 return ""
             opening_gene = content_gene = gene
 
+        profile = oral_length_profile(source_text)
         user_msg = REWRITE_USER.format(
             topic=topic,
             opening_gene_json=json.dumps(
@@ -94,10 +97,11 @@ class ContentAgent(BaseAgent):
             content_gene_json=json.dumps(
                 content_gene.model_dump(), ensure_ascii=False, indent=2
             ),
+            length_instruction=oral_length_instruction(profile),
         )
         data = await chat_json(REWRITE_SYSTEM, user_msg)
         draft = data.get("oral_draft", "")
-        self.log(f"洗稿完成，底稿 {len(draft)} 字")
+        self.log(f"洗稿完成，底稿 {len(draft)} 字，目标 {profile['min_chars']}-{profile['max_chars']} 字")
         return draft
 
     async def run(
@@ -111,4 +115,5 @@ class ContentAgent(BaseAgent):
         if not genes:
             self.warn("解构结果为空，跳过洗稿")
             return ""
-        return await self.rewrite(topic, genes, topic_report)
+        source_text = next((video.script for video in videos if video.script), "")
+        return await self.rewrite(topic, genes, topic_report, source_text=source_text)
