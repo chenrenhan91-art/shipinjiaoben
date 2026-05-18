@@ -23,6 +23,10 @@ from utils.text_utils import clean_text
 
 DOUYIN_SEARCH_URL = "https://www.douyin.com/search/{keyword}"
 XHS_SEARCH_URL = "https://www.xiaohongshu.com/search_result?keyword={keyword}"
+DOUYIN_HOT_ENDPOINTS = [
+    "https://www.douyin.com/aweme/v1/web/hot/search/list/",
+    "https://www.iesdouyin.com/web/api/v2/hotsearch/billboard/word/",
+]
 URL_RE = re.compile(r"https?://[^\s'\"<>，。；、）)】」]+", re.I)
 
 
@@ -229,6 +233,91 @@ def _dedupe(items: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
     return unique
 
 
+def _normalize_hot_word(raw: dict[str, Any], source: str, position: int) -> dict[str, Any] | None:
+    word = clean_text(str(raw.get("word") or raw.get("sentence") or raw.get("title") or ""))
+    if not word:
+        return None
+    hot_value = _normalize_count(raw.get("hot_value") or raw.get("hotValue") or raw.get("heat_score"))
+    rank = _normalize_count(raw.get("position") or raw.get("rank") or raw.get("max_rank")) or position
+    video_count = _normalize_count(raw.get("video_count") or raw.get("discuss_video_count"))
+    sentence_id = clean_text(str(raw.get("sentence_id") or raw.get("group_id") or ""))
+    summary_parts = [f"抖音热榜第 {rank} 名"]
+    if hot_value:
+        summary_parts.append(f"热度 {hot_value:,}")
+    if video_count:
+        summary_parts.append(f"相关视频 {video_count} 条")
+    return {
+        "platform": "douyin",
+        "source": source,
+        "source_type": "hot_word",
+        "title": word,
+        "url": DOUYIN_SEARCH_URL.format(keyword=quote(word)),
+        "likes": 0,
+        "hot_value": hot_value,
+        "heat_score": hot_value,
+        "comment_count": 0,
+        "share_count": 0,
+        "collect_count": 0,
+        "duration_seconds": 0,
+        "script": "；".join(summary_parts) + "。",
+        "comments_hot": [],
+        "raw_id": sentence_id or f"douyin_hot_{rank}_{word}",
+        "position": rank,
+        "video_count": video_count,
+    }
+
+
+def _keyword_matches_hot_word(item: dict[str, Any], keyword: str) -> bool:
+    keyword = clean_text(keyword)
+    title = clean_text(str(item.get("title") or ""))
+    if not keyword or not title:
+        return False
+    return keyword in title or title in keyword
+
+
+async def _fetch_douyin_hot_words(keyword: str, limit: int, status: dict[str, Any]) -> list[dict[str, Any]]:
+    headers = {**_headers(), "Referer": "https://www.douyin.com/"}
+    errors: list[str] = []
+    for endpoint in DOUYIN_HOT_ENDPOINTS:
+        try:
+            async with httpx.AsyncClient(trust_env=False, follow_redirects=True) as client:
+                resp = await client.get(endpoint, headers=headers, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+        except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as exc:
+            errors.append(f"{endpoint}: {exc.__class__.__name__}")
+            continue
+
+        source_name = "抖音热榜"
+        container = data.get("data") if isinstance(data.get("data"), dict) else data
+        raw_words: list[dict[str, Any]] = []
+        for key in ("word_list", "trending_list"):
+            value = container.get(key) if isinstance(container, dict) else None
+            if isinstance(value, list):
+                raw_words.extend([item for item in value if isinstance(item, dict)])
+        if not raw_words:
+            errors.append(f"{endpoint}: empty")
+            continue
+
+        items = [
+            item
+            for idx, raw in enumerate(raw_words, 1)
+            if (item := _normalize_hot_word(raw, source_name, idx))
+        ]
+        items = _dedupe(items, max(limit * 3, limit))
+        matched = [item for item in items if _keyword_matches_hot_word(item, keyword)]
+        result = _dedupe(matched or items, limit)
+        if result:
+            status["douyin_hot"] = "ok"
+            status["douyin_hot_source"] = endpoint
+            return result
+
+    status["douyin_hot"] = "unavailable" if errors else "empty"
+    if errors:
+        status["douyin_hot_error"] = " | ".join(errors[:2])
+    return []
+
+
 def _merge_item(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
     merged = {**base}
     for key, value in extra.items():
@@ -345,7 +434,7 @@ async def _comments_douyin(detail_id: str, status: dict[str, Any]) -> list[str]:
 async def _enrich_douyin_items(items: list[dict[str, Any]], status: dict[str, Any]) -> list[dict[str, Any]]:
     enriched: list[dict[str, Any]] = []
     for item in items:
-        if item.get("platform") != "douyin":
+        if item.get("platform") != "douyin" or item.get("source_type") == "hot_word":
             enriched.append(item)
             continue
         merged = item
@@ -381,7 +470,14 @@ async def check_douyin_status(keyword: str = "测试") -> dict[str, Any]:
     probe: dict[str, Any] = {}
     items = await _search_douyin(keyword, 1, probe)
     status["search_probe"] = probe.get("douyin", "empty")
-    status["login_hint"] = "搜索探测成功" if items else "若搜索为空/403/500/502，请重新导入登录态；若仍为 500，通常是 DouK 搜索接口拿到空结果后内部报错"
+    hot_probe: dict[str, Any] = {}
+    hot_items = [] if items else await _fetch_douyin_hot_words(keyword, 3, hot_probe)
+    if hot_items:
+        status["hot_probe"] = "ok"
+        status["hot_count"] = len(hot_items)
+    status["login_hint"] = "搜索探测成功" if items else (
+        "作品搜索暂不可用，但抖音热榜可用" if hot_items else "若搜索为空/403/500/502，请重新导入登录态；若仍为 500，通常是 DouK 搜索接口拿到空结果后内部报错"
+    )
     return status
 
 
@@ -466,9 +562,18 @@ async def _extract_public_page(source_url: str, status: dict[str, Any]) -> str:
 def _items_to_source_text(items: list[dict[str, Any]], public_text: str = "") -> str:
     lines: list[str] = []
     for idx, item in enumerate(items, 1):
-        lines.append(
-            f"来源{idx}｜平台：{item['platform']}｜标题：{item['title']}｜点赞：{item.get('likes', 0)}｜评论：{item.get('comment_count', 0)}｜分享：{item.get('share_count', 0)}｜收藏：{item.get('collect_count', 0)}｜链接：{item.get('url', '')}"
-        )
+        heat = item.get("hot_value") or item.get("heat_score") or 0
+        if item.get("source_type") == "hot_word":
+            heat_part = f"｜热度：{heat}" if heat else ""
+            position_part = f"｜排名：{item.get('position')}" if item.get("position") else ""
+            video_part = f"｜相关视频：{item.get('video_count')}条" if item.get("video_count") else ""
+            lines.append(
+                f"来源{idx}｜平台：抖音｜来源：{item.get('source', '')}｜标题：{item['title']}{position_part}{heat_part}{video_part}｜链接：{item.get('url', '')}"
+            )
+        else:
+            lines.append(
+                f"来源{idx}｜平台：{item['platform']}｜来源：{item.get('source', '')}｜标题：{item['title']}｜点赞：{item.get('likes', 0)}｜评论：{item.get('comment_count', 0)}｜分享：{item.get('share_count', 0)}｜收藏：{item.get('collect_count', 0)}｜链接：{item.get('url', '')}"
+            )
         if item.get("script"):
             lines.append(f"文案/字幕素材：{item['script'][:500]}")
         if item.get("comments_hot"):
@@ -488,6 +593,14 @@ async def search_viral_content(keyword: str, source_url: str = "", limit: int = 
     items.extend(await _detail_xhs(source_url, status))
     if keyword:
         items.extend(await _search_douyin(keyword, limit, status))
+    if keyword and not any(item.get("platform") == "douyin" for item in items):
+        search_status = status.get("douyin")
+        hot_items = await _fetch_douyin_hot_words(keyword, limit, status)
+        if hot_items:
+            items.extend(hot_items)
+            if search_status:
+                status["douyin_search"] = search_status
+            status["douyin"] = "ok:hot_list"
     public_text = await _extract_public_page(source_url, status) if source_url else ""
 
     items = await _enrich_douyin_items(_dedupe(items, limit), status)

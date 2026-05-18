@@ -1338,15 +1338,17 @@ function platformDisplayName(platform) {
 
 function formatPlatformStats(item) {
   const parts = [];
+  const heat = Number(item.hot_value || item.heat_score || 0);
   const likes = Number(item.likes || 0);
   const comments = Number(item.comment_count || 0);
   const shares = Number(item.share_count || 0);
   const collects = Number(item.collect_count || 0);
+  if (heat && !likes && item.source_type === 'hot_word') parts.push(formatHeat(heat));
   if (likes) parts.push(`${likes.toLocaleString('zh-CN')}赞`);
   if (comments) parts.push(`${comments.toLocaleString('zh-CN')}评`);
   if (shares) parts.push(`${shares.toLocaleString('zh-CN')}转`);
   if (collects) parts.push(`${collects.toLocaleString('zh-CN')}藏`);
-  return parts.join(' · ') || '作品级来源';
+  return parts.join(' · ') || (item.source_type === 'hot_word' ? '抖音热榜' : '作品级来源');
 }
 
 function renderPlatformSourceSection(platform={}) {
@@ -1362,11 +1364,13 @@ function renderPlatformSourceSection(platform={}) {
 
   const douyinOk = String(status.douyin || status.douyin_detail || '').includes('ok') || items.some(item => item.platform === 'douyin');
   const xhsOk = String(status.xiaohongshu_detail || '').includes('ok') || items.some(item => item.platform === 'xiaohongshu');
+  const douyinStatus = status.douyin === 'ok:hot_list' ? '热榜已返回' : status.douyin;
   const statusHtml = `
     <div class="platform-status">
       <span class="platform-pill ${douyinOk ? 'ok' : 'warn'}">抖音：${douyinOk ? `已抓到 ${items.filter(i => i.platform === 'douyin').length} 条` : '等待作品源或登录态'}</span>
       ${douyinOnly ? '' : `<span class="platform-pill ${xhsOk ? 'ok' : 'warn'}">小红书：${xhsOk ? `已抓到 ${items.filter(i => i.platform === 'xiaohongshu').length} 条` : '当前提供搜索/链接采集入口'}</span>`}
-      ${status.douyin ? `<span class="platform-pill">抖音接口：${escapeHtml(status.douyin)}</span>` : ''}
+      ${douyinStatus ? `<span class="platform-pill">抖音接口：${escapeHtml(douyinStatus)}</span>` : ''}
+      ${status.douyin_hot === 'ok' ? '<span class="platform-pill ok">抖音热榜：已接入</span>' : ''}
       ${!douyinOnly && status.xiaohongshu_detail ? `<span class="platform-pill">小红书接口：${escapeHtml(status.xiaohongshu_detail)}</span>` : ''}
       ${status.error ? `<span class="platform-pill warn">采集错误：${escapeHtml(status.error)}</span>` : ''}
     </div>`;
@@ -1374,11 +1378,12 @@ function renderPlatformSourceSection(platform={}) {
   const cards = items.map((item, idx) => {
     const title = escapeHtml(item.title || item.script || `平台来源 ${idx + 1}`);
     const url = escapeHtml(item.url || '');
-    const source = escapeHtml(platformDisplayName(item.platform));
+    const source = escapeHtml(item.source || platformDisplayName(item.platform));
     const stats = escapeHtml(formatPlatformStats(item));
     const summary = escapeHtml(item.script || (item.comments_hot || []).join(' / ') || '来自本机助手的平台作品采集结果。');
+    const openText = item.source_type === 'hot_word' ? '打开热榜搜索' : '打开作品';
     const openLink = url
-      ? `<a class="source-open" href="${url}" target="_blank" rel="noopener noreferrer">打开作品</a>`
+      ? `<a class="source-open" href="${url}" target="_blank" rel="noopener noreferrer">${openText}</a>`
       : '<span class="source-heat">暂无作品链接</span>';
     const titleNode = url
       ? `<a class="source-card-title" href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>`
