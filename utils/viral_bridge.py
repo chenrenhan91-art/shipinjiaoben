@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import re
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -105,7 +105,7 @@ def _normalize_count(value: Any) -> int:
     if value is None:
         return 0
     if isinstance(value, (int, float)):
-        return int(value)
+        return max(0, int(value))
     text = str(value).strip().replace(",", "")
     if not text:
         return 0
@@ -324,6 +324,170 @@ def _video_search_terms(keyword: str, limit: int = 6) -> list[str]:
     return [term for term in dict.fromkeys(terms) if term][:limit]
 
 
+def _indexed_result_url(href: str) -> str:
+    href = clean_text(href)
+    if not href:
+        return ""
+    if href.startswith("//"):
+        href = f"https:{href}"
+    parsed = urlparse(href)
+    for key in ("uddg", "u"):
+        values = parse_qs(parsed.query).get(key) or []
+        for value in values:
+            decoded = unquote(value)
+            if "douyin.com/video/" in decoded:
+                return decoded
+    return href if "douyin.com/video/" in href else ""
+
+
+def _douyin_video_ids_from_text(text: str) -> list[str]:
+    expanded = text
+    for _ in range(2):
+        expanded = unquote(expanded)
+    ids = re.findall(r"(?:douyin\.com/video/|/video/|video%2F)(\d{16,22})", expanded, re.I)
+    return [item_id for item_id in dict.fromkeys(ids) if item_id]
+
+
+def _indexed_candidates_from_markdown(text: str, term: str, limit: int) -> list[dict[str, str]]:
+    candidates: list[dict[str, str]] = []
+    sections = re.split(r"\n##\s+", f"\n{text}")
+    for section in sections:
+        match = re.match(r"\[([^\]]+)\]\(([^)]+)\)", section.strip())
+        title = clean_text(match.group(1)) if match else ""
+        href = _indexed_result_url(match.group(2)) if match else ""
+        block_text = clean_text(section)
+        ids = _douyin_video_ids_from_text(f"{href} {block_text}")
+        if not ids:
+            continue
+        item_id = ids[0]
+        candidates.append({
+            "raw_id": item_id,
+            "title": title or block_text[:80],
+            "url": href or f"https://www.douyin.com/video/{item_id}",
+            "script": block_text,
+            "search_term": term,
+        })
+        if len(candidates) >= limit:
+            break
+    return _dedupe(candidates, limit)
+
+
+def _indexed_candidates_from_html(text: str, term: str, limit: int) -> list[dict[str, str]]:
+    soup = BeautifulSoup(text, "lxml")
+    candidates: list[dict[str, str]] = []
+    for result in soup.select(".result"):
+        link = result.select_one("a.result__a") or result.find("a")
+        if not link:
+            continue
+        title = clean_text(link.get_text(" ", strip=True))
+        href = _indexed_result_url(str(link.get("href") or ""))
+        block_text = clean_text(result.get_text(" ", strip=True))
+        ids = _douyin_video_ids_from_text(f"{href} {block_text}")
+        if not ids:
+            continue
+        item_id = ids[0]
+        candidates.append({
+            "raw_id": item_id,
+            "title": title or block_text[:80],
+            "url": href or f"https://www.douyin.com/video/{item_id}",
+            "script": block_text,
+            "search_term": term,
+        })
+        if len(candidates) >= limit:
+            break
+    return _dedupe(candidates, limit)
+
+
+async def _search_indexed_douyin_candidates(term: str, limit: int, status: dict[str, Any]) -> list[dict[str, str]]:
+    query = f"site:douyin.com/video {term} 抖音"
+    jina_url = f"https://r.jina.ai/http://duckduckgo.com/html/?q={quote(query)}"
+    endpoints = [
+        (jina_url, None, "markdown"),
+        ("https://html.duckduckgo.com/html/", {"q": query}, "html"),
+        ("https://duckduckgo.com/html/", {"q": query}, "html"),
+    ]
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
+    errors: list[str] = []
+    for endpoint, params, parser in endpoints:
+        try:
+            async with httpx.AsyncClient(trust_env=False, follow_redirects=True) as client:
+                resp = await client.get(endpoint, params=params, headers=headers, timeout=25)
+            resp.raise_for_status()
+        except (httpx.HTTPStatusError, httpx.RequestError) as exc:
+            if isinstance(exc, httpx.HTTPStatusError):
+                errors.append(f"{endpoint}: HTTP {exc.response.status_code}")
+            else:
+                errors.append(f"{endpoint}: {exc.__class__.__name__}")
+            continue
+
+        candidates = (
+            _indexed_candidates_from_markdown(resp.text, term, limit)
+            if parser == "markdown"
+            else _indexed_candidates_from_html(resp.text, term, limit)
+        )
+        if candidates:
+            status.setdefault("douyin_index_source", endpoint)
+            return candidates
+        errors.append(f"{endpoint}: empty")
+
+    if errors:
+        status.setdefault("douyin_index_error", " | ".join(errors[:2]))
+    return []
+
+
+async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, status: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, str]] = []
+    term_states: dict[str, str] = {}
+    for term in terms:
+        term_candidates = await _search_indexed_douyin_candidates(term, max(limit, 8), status)
+        term_states[term] = "ok" if term_candidates else "empty"
+        candidates.extend(term_candidates)
+        candidates = _dedupe(candidates, limit * 4)
+        if len(candidates) >= limit * 3:
+            break
+
+    items: list[dict[str, Any]] = []
+    for candidate in candidates[: limit * 3]:
+        base = {
+            "platform": "douyin",
+            "source": "公开搜索索引 + DouK详情",
+            "source_type": "video_fallback",
+            "title": candidate.get("title", ""),
+            "url": candidate.get("url") or f"https://www.douyin.com/video/{candidate.get('raw_id', '')}",
+            "likes": 0,
+            "comment_count": 0,
+            "share_count": 0,
+            "collect_count": 0,
+            "duration_seconds": 0,
+            "script": candidate.get("script", ""),
+            "comments_hot": [],
+            "raw_id": candidate.get("raw_id", ""),
+            "search_term": candidate.get("search_term", ""),
+        }
+        detail = await _detail_douyin_by_id(base["raw_id"], status)
+        item = _merge_item(base, detail) if detail else base
+        if detail:
+            item["title"] = detail.get("title") or item.get("title", "")
+            item["script"] = detail.get("script") or item.get("script", "")
+        item["source_type"] = "video_fallback"
+        item["search_term"] = base["search_term"]
+        item["core_score"] = _core_video_score(item)
+        item["detail_resolved"] = bool(detail)
+        if item.get("core_score"):
+            items.append(item)
+        await asyncio.sleep(0.4)
+
+    items.sort(key=lambda item: (item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
+    result = _dedupe(items, limit)
+    status["douyin_index_term_status"] = term_states
+    status["douyin_index_fallback"] = "ok" if result else "empty"
+    return result
+
+
 async def _search_douyin_videos_by_terms(keyword: str, limit: int, status: dict[str, Any]) -> list[dict[str, Any]]:
     terms = _video_search_terms(keyword)
     if not terms:
@@ -345,6 +509,8 @@ async def _search_douyin_videos_by_terms(keyword: str, limit: int, status: dict[
     unique = _dedupe(found, limit * 3)
     unique.sort(key=lambda item: (item.get("core_score") or _core_video_score(item), item.get("likes") or 0), reverse=True)
     result = _dedupe(unique, limit)
+    if not result:
+        result = await _search_indexed_douyin_videos_by_terms(terms, limit, status)
     status["douyin_video_terms"] = terms
     status["douyin_video_term_status"] = term_states
     status["douyin_video_fallback"] = "ok" if result else "empty"
@@ -489,10 +655,16 @@ async def _detail_douyin_by_id(detail_id: str, status: dict[str, Any]) -> dict[s
     try:
         async with httpx.AsyncClient(trust_env=False) as client:
             data = await _post_json(client, url, payload, config.douk_api_token)
+        candidates: list[dict[str, Any]] = []
         for raw in _walk_dicts(data):
             item = _normalize_item(raw, "douyin", "TikTokDownloader/detail")
-            if item and (item.get("raw_id") == detail_id or item.get("title")):
+            if item and item.get("raw_id") == detail_id:
                 return item
+            if item:
+                candidates.append(item)
+        if candidates:
+            candidates.sort(key=lambda item: (_core_video_score(item), bool(item.get("raw_id"))), reverse=True)
+            return candidates[0]
     except httpx.HTTPStatusError as exc:
         status.setdefault("douyin_detail_batch", f"unavailable: HTTP {exc.response.status_code}")
     except httpx.RequestError as exc:
@@ -521,7 +693,7 @@ async def _comments_douyin(detail_id: str, status: dict[str, Any]) -> list[str]:
 async def _enrich_douyin_items(items: list[dict[str, Any]], status: dict[str, Any]) -> list[dict[str, Any]]:
     enriched: list[dict[str, Any]] = []
     for item in items:
-        if item.get("platform") != "douyin" or item.get("source_type") == "hot_word":
+        if item.get("platform") != "douyin" or item.get("source_type") == "hot_word" or item.get("detail_resolved"):
             enriched.append(item)
             continue
         merged = item
