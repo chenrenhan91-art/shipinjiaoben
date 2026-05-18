@@ -323,6 +323,15 @@ select.config-input option { background: var(--bg3); }
 .source-use { color: var(--text); }
 .source-open:hover, .source-use:hover { border-color: var(--accent); }
 .source-empty { color: var(--muted); padding: 24px 0; text-align: center; }
+.source-section { margin-bottom: 20px; }
+.source-section + .source-section { padding-top: 16px; border-top: 1px solid var(--border); }
+.source-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.source-section-title { font-size: 14px; font-weight: 800; }
+.source-section-desc { color: var(--muted); font-size: 11px; line-height: 1.6; margin-top: 2px; }
+.platform-status { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.platform-pill { font-size: 11px; color: var(--muted); background: var(--bg3); border: 1px solid var(--border); border-radius: 20px; padding: 3px 8px; }
+.platform-pill.ok { color: #86efac; border-color: rgba(34,197,94,.35); }
+.platform-pill.warn { color: #fbbf24; border-color: rgba(251,191,36,.35); }
 .helper-panel {
   background: var(--card); border: 1px solid var(--border); border-radius: 8px;
   padding: 14px; display: grid; gap: 12px;
@@ -1293,6 +1302,90 @@ function formatHeat(value) {
   return `${Math.round(n).toLocaleString('zh-CN')}热度`;
 }
 
+function platformDisplayName(platform) {
+  const key = String(platform || '').toLowerCase();
+  if (key === 'douyin') return '抖音作品';
+  if (key === 'xiaohongshu') return '小红书笔记';
+  return '平台作品';
+}
+
+function formatPlatformStats(item) {
+  const parts = [];
+  const likes = Number(item.likes || 0);
+  const comments = Number(item.comment_count || 0);
+  const shares = Number(item.share_count || 0);
+  const collects = Number(item.collect_count || 0);
+  if (likes) parts.push(`${likes.toLocaleString('zh-CN')}赞`);
+  if (comments) parts.push(`${comments.toLocaleString('zh-CN')}评`);
+  if (shares) parts.push(`${shares.toLocaleString('zh-CN')}转`);
+  if (collects) parts.push(`${collects.toLocaleString('zh-CN')}藏`);
+  return parts.join(' · ') || '作品级来源';
+}
+
+function renderPlatformSourceSection(platform={}) {
+  const keyword = escapeHtml(platform.keyword || '财经热点');
+  const items = (platform.items || []).filter(item => item?.url || item?.title);
+  const status = platform.status || {};
+  const searchLinks = platform.searchLinks || [];
+  window._platformSources = items;
+
+  const douyinOk = String(status.douyin || status.douyin_detail || '').includes('ok') || items.some(item => item.platform === 'douyin');
+  const xhsOk = String(status.xiaohongshu_detail || '').includes('ok') || items.some(item => item.platform === 'xiaohongshu');
+  const statusHtml = `
+    <div class="platform-status">
+      <span class="platform-pill ${douyinOk ? 'ok' : 'warn'}">抖音：${douyinOk ? `已抓到 ${items.filter(i => i.platform === 'douyin').length} 条` : '等待作品源或登录态'}</span>
+      <span class="platform-pill ${xhsOk ? 'ok' : 'warn'}">小红书：${xhsOk ? `已抓到 ${items.filter(i => i.platform === 'xiaohongshu').length} 条` : '当前提供搜索/链接采集入口'}</span>
+      ${status.douyin ? `<span class="platform-pill">抖音接口：${escapeHtml(status.douyin)}</span>` : ''}
+      ${status.xiaohongshu_detail ? `<span class="platform-pill">小红书接口：${escapeHtml(status.xiaohongshu_detail)}</span>` : ''}
+      ${status.error ? `<span class="platform-pill warn">采集错误：${escapeHtml(status.error)}</span>` : ''}
+    </div>`;
+
+  const cards = items.map((item, idx) => {
+    const title = escapeHtml(item.title || item.script || `平台来源 ${idx + 1}`);
+    const url = escapeHtml(item.url || '');
+    const source = escapeHtml(platformDisplayName(item.platform));
+    const stats = escapeHtml(formatPlatformStats(item));
+    const summary = escapeHtml(item.script || (item.comments_hot || []).join(' / ') || '来自本机助手的平台作品采集结果。');
+    const openLink = url
+      ? `<a class="source-open" href="${url}" target="_blank" rel="noopener noreferrer">打开作品</a>`
+      : '<span class="source-heat">暂无作品链接</span>';
+    const titleNode = url
+      ? `<a class="source-card-title" href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>`
+      : `<div class="source-card-title">${title}</div>`;
+    return `<div class="source-card">
+      <div class="source-card-head">
+        <span class="source-platform">${source}</span>
+        <span class="source-heat">${stats}</span>
+      </div>
+      ${titleNode}
+      <div class="source-summary">${summary}</div>
+      <div class="source-actions">
+        ${openLink}
+        <button class="source-use" onclick="usePlatformSource(${idx})">用作选题</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  const linksHtml = searchLinks.length ? `<div class="helper-actions">
+    ${searchLinks.map(link => `<a class="helper-action" href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(link.label)}</a>`).join('')}
+  </div>` : '';
+  const body = platform.loading
+    ? '<div class="source-empty"><span class="spinner"></span> 正在通过本机助手抓取抖音/小红书平台源…</div>'
+    : (cards ? `<div class="source-grid">${cards}</div>` : `<div class="source-empty">暂未抓到作品卡片。可先打开平台搜索页查看源头，或确认平台登录态后刷新。</div>`);
+
+  return `<div class="source-section">
+    <div class="source-section-head">
+      <div>
+        <div class="source-section-title">本机平台采集源</div>
+        <div class="source-section-desc">抖音/小红书需要本机助手、平台登录态和平台风控通过；当前关键词：${keyword}</div>
+      </div>
+    </div>
+    ${statusHtml}
+    ${body}
+    ${linksHtml}
+  </div>`;
+}
+
 function renderHotSources(topics, meta={}) {
   topics = (topics || []).filter(item => item?.url);
   const summary = topics.reduce((acc, item) => {
@@ -1313,11 +1406,6 @@ function renderHotSources(topics, meta={}) {
   document.getElementById('outputContent').style.display = 'block';
   document.getElementById('exportBtn').style.display = 'none';
   document.getElementById('outputMeta').textContent = `热点源：${filteredTopics.length} 条`;
-
-  if (!topics.length) {
-    document.getElementById('outputContent').innerHTML = '<div class="source-empty">暂未抓到热点源。可以稍后重试，或检查本机助手是否运行。</div>';
-    return;
-  }
 
   const chips = Object.entries(summary)
     .sort((a, b) => b[1] - a[1])
@@ -1351,15 +1439,18 @@ function renderHotSources(topics, meta={}) {
   }).join('');
 
   document.getElementById('outputContent').innerHTML = `<div>
-    <div class="source-toolbar">
-      <div>
-        <div class="source-title-main">近期热点信息源</div>
-        <div class="source-stats">可显示 ${topics.length} 条，当前展示 ${filteredTopics.length} 条；仅展示当前可返回源头链接的公开热榜和权威资讯。</div>
+    <div class="source-section">
+      <div class="source-toolbar">
+        <div>
+          <div class="source-title-main">免助手公开热点源</div>
+          <div class="source-stats">可显示 ${topics.length} 条，当前展示 ${filteredTopics.length} 条；百度、头条、微博、腾讯、36氪等公开源无需平台登录。</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="loadHotSources()">刷新</button>
       </div>
-      <button class="btn btn-outline btn-sm" onclick="loadHotSources()">刷新</button>
+      ${topics.length ? `<div class="source-chips">${allChip}${chips}</div>` : ''}
+      ${filteredTopics.length ? `<div class="source-grid">${cards}</div>` : `<div class="source-empty">暂未抓到免助手公开源。可以稍后重试，或直接查看下方本机平台采集源。</div>`}
     </div>
-    <div class="source-chips">${allChip}${chips}</div>
-    ${filteredTopics.length ? `<div class="source-grid">${cards}</div>` : `<div class="source-empty">该平台暂无信息源。</div>`}
+    ${renderPlatformSourceSection(meta.platform || {})}
   </div>`;
 }
 
@@ -1383,17 +1474,65 @@ function useHotSource(index) {
   document.getElementById('pipelineStatus').textContent = '已选择热点源，点击开始生成…';
 }
 
+function usePlatformSource(index) {
+  const item = (window._platformSources || [])[index];
+  if (!item) return;
+  const title = item.title || item.script || '';
+  document.getElementById('cfgTopic').value = title;
+  document.getElementById('cfgKeyword').value = title.slice(0, 18);
+  if (item.url) document.getElementById('cfgSourceUrl').value = item.url;
+  addLog('HOT', 'tag-hot', `已选择${platformDisplayName(item.platform)}作为本轮选题：「${escapeHtml(title)}」`);
+  document.getElementById('pipelineStatus').textContent = '已选择平台作品源，点击开始生成…';
+}
+
 async function loadHotSources() {
   document.getElementById('outputPlaceholder').style.display = 'none';
   document.getElementById('outputContent').style.display = 'block';
   document.getElementById('outputMeta').textContent = '热点源抓取中…';
   document.getElementById('exportBtn').style.display = 'none';
-  document.getElementById('outputContent').innerHTML = '<div class="source-empty"><span class="spinner"></span> 正在抓取多平台热点源…</div>';
+  document.getElementById('outputContent').innerHTML = '<div class="source-empty"><span class="spinner"></span> 正在抓取公开热点源和本机平台源…</div>';
   addLog('HOT', 'tag-hot', '开始抓取近期热点信息源…');
   try {
+    const platformKeyword = document.getElementById('cfgKeyword').value.trim()
+      || document.getElementById('cfgTopic').value.trim().slice(0, 18)
+      || '财经热点';
     const data = await fetchHotTopics(80);
-    renderHotSources(data.topics || [], data);
-    addLog('HOT', 'tag-hot', `热点源抓取完成：${(data.topics || []).length} 条，可点击跳转源头 ✓`);
+    const platformState = { keyword: platformKeyword, loading: true, items: [], status: {}, searchLinks: [] };
+    renderHotSources(data.topics || [], { ...data, platform: platformState });
+    addLog('HOT', 'tag-hot', `公开热点源抓取完成：${(data.topics || []).length} 条，可点击跳转源头 ✓`);
+
+    try {
+      const bridge = await fetchViralBridge(platformKeyword, '');
+      const items = bridge.items || [];
+      renderHotSources(data.topics || [], {
+        ...data,
+        platform: {
+          keyword: platformKeyword,
+          loading: false,
+          items,
+          status: bridge.status || {},
+          searchLinks: bridge.search_links || [],
+        },
+      });
+      addLog('HOT', 'tag-hot', items.length
+        ? `本机平台源抓取完成：${items.length} 条抖音/小红书作品源 ✓`
+        : '本机平台源暂未抓到作品卡片，已提供平台搜索入口');
+    } catch(platformError) {
+      renderHotSources(data.topics || [], {
+        ...data,
+        platform: {
+          keyword: platformKeyword,
+          loading: false,
+          items: [],
+          status: { error: platformError.message },
+          searchLinks: [
+            { label: '抖音关键词搜索', url: `https://www.douyin.com/search/${encodeURIComponent(platformKeyword)}` },
+            { label: '小红书关键词搜索', url: `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(platformKeyword)}` },
+          ],
+        },
+      });
+      addLog('HOT', 'tag-hot', `<span style="color:#fbbf24">本机平台源抓取未完成：${escapeHtml(platformError.message)}</span>`);
+    }
   } catch(e) {
     document.getElementById('outputMeta').textContent = '热点源抓取失败';
     const hint = e.message.includes('HTTP 404') ? '检测到旧版本机助手，请重新下载安装最新版。' : `本机助手未连接或接口不可用：${e.message}`;
