@@ -28,6 +28,7 @@ class ViralSearchRequest(BaseModel):
     keyword: str = Field(default="", description="关键词")
     source_url: str = Field(default="", description="抖音/小红书/文章来源链接")
     limit: int = Field(default=6, ge=1, le=20, description="最多返回条数")
+    video_only: bool = Field(default=False, description="是否直接搜索关键词相关视频")
 
 
 class SourceExtractRequest(BaseModel):
@@ -101,7 +102,7 @@ async def douyin_status(keyword: str = "测试") -> dict:
 @app.post("/api/viral/search")
 async def viral_search(req: ViralSearchRequest) -> dict:
     await ensure_douyin_tool_started()
-    return await search_viral_content(req.keyword, req.source_url, req.limit)
+    return await search_viral_content(req.keyword, req.source_url, req.limit, req.video_only)
 
 
 @app.get("/api/hot/topics")

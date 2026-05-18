@@ -1239,14 +1239,16 @@ async function fetchUrlContent(urlInput) {
   }
 }
 
-async function fetchViralBridge(keyword, sourceUrl) {
+async function fetchViralBridge(keyword, sourceUrl, options={}) {
   const limit = 6;
   await callHelper('/api/helper/start', { method: 'POST' }, 35000).catch(() => null);
+  const payload = { keyword, source_url: sourceUrl || '', limit };
+  if (options.videoOnly) payload.video_only = true;
   return await callHelper('/api/viral/search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ keyword, source_url: sourceUrl || '', limit }),
-  }, 90000);
+    body: JSON.stringify(payload),
+  }, options.videoOnly ? 180000 : 90000);
 }
 
 async function fetchHotTopics(limit=80) {
@@ -1362,11 +1364,14 @@ function renderPlatformSourceSection(platform={}) {
   const douyinOk = String(status.douyin || status.douyin_detail || '').includes('ok') || items.some(item => item.platform === 'douyin');
   const xhsOk = String(status.xiaohongshu_detail || '').includes('ok') || items.some(item => item.platform === 'xiaohongshu');
   const keywordNoMatch = String(status.douyin_hot || '').startsWith('empty:keyword_no_match');
-  const videoFallbackEmpty = keywordNoMatch && status.douyin_video_fallback === 'empty';
+  const keywordVideoMode = status.douyin_video_mode === 'keyword_index';
+  const videoFallbackEmpty = (keywordNoMatch || keywordVideoMode) && status.douyin_video_fallback === 'empty';
   const douyinStatus = status.douyin === 'ok:hot_list'
     ? '热榜已返回'
     : status.douyin === 'ok:video_fallback'
       ? '相关视频已返回'
+      : status.douyin === 'ok:keyword_videos'
+        ? '关键词热点视频已返回'
       : status.douyin;
   const statusHtml = `
     <div class="platform-status">
@@ -1375,6 +1380,7 @@ function renderPlatformSourceSection(platform={}) {
       ${douyinStatus ? `<span class="platform-pill">抖音接口：${escapeHtml(douyinStatus)}</span>` : ''}
       ${status.douyin_hot === 'ok' ? '<span class="platform-pill ok">抖音热榜：已接入</span>' : ''}
       ${status.douyin_video_fallback === 'ok' ? '<span class="platform-pill ok">相关视频：按核心数据排序</span>' : ''}
+      ${keywordVideoMode ? '<span class="platform-pill ok">视频索引：关键词相关</span>' : ''}
       ${!douyinOnly && status.xiaohongshu_detail ? `<span class="platform-pill">小红书接口：${escapeHtml(status.xiaohongshu_detail)}</span>` : ''}
       ${status.error ? `<span class="platform-pill warn">采集错误：${escapeHtml(status.error)}</span>` : ''}
     </div>`;
@@ -1409,9 +1415,12 @@ function renderPlatformSourceSection(platform={}) {
   const linksHtml = searchLinks.length ? `<div class="helper-actions">
     ${searchLinks.map(link => `<a class="helper-action" href="${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(link.label)}</a>`).join('')}
   </div>` : '';
+  const videoSearchHtml = douyinOnly && !platform.loading ? `<div class="helper-actions">
+    <button class="helper-action primary" onclick="runDouyinKeywordVideoSearch()">搜索关键词相关热点视频</button>
+  </div>` : '';
   const body = platform.loading
     ? '<div class="source-empty"><span class="spinner"></span> 正在通过本机助手抓取抖音/小红书平台源…</div>'
-    : (cards ? `<div class="source-grid">${cards}</div>` : `<div class="source-empty">${videoFallbackEmpty ? '当前关键词没有匹配到抖音热榜，相关视频搜索也暂未返回可用内容。可以换一个更具体或更宽泛的关键词再抓取。' : keywordNoMatch ? '当前关键词没有匹配到抖音热榜内容，正在尝试转向相关视频内容。' : '暂未抓到作品卡片。可先打开平台搜索页查看源头，或确认平台登录态后刷新。'}</div>`);
+    : (cards ? `<div class="source-grid">${cards}</div>` : `<div class="source-empty">${videoFallbackEmpty ? '当前关键词相关热点视频暂未返回可用内容。可以换一个更具体或更宽泛的关键词再搜索。' : keywordNoMatch ? '当前关键词没有匹配到抖音热榜内容。可以点击下方按钮搜索关键词相关热点视频。' : '暂未抓到作品卡片。可先打开平台搜索页查看源头，或确认平台登录态后刷新。'}</div>`);
 
   return `<div class="source-section">
     <div class="source-section-head">
@@ -1422,6 +1431,7 @@ function renderPlatformSourceSection(platform={}) {
     </div>
     ${statusHtml}
     ${body}
+    ${videoSearchHtml}
     ${linksHtml}
   </div>`;
 }
@@ -1465,12 +1475,13 @@ function renderDouyinKeywordPrompt(message='') {
     <div class="helper-panel">
       <div>
         <div class="helper-panel-title">填写抖音热点关键词</div>
-        <div class="helper-panel-text">输入你想收束的方向，例如：财经热点、AI、职场、房产、美妆。系统会按关键词组过滤抖音热榜。</div>
+        <div class="helper-panel-text">输入你想收束的方向，例如：财经热点、AI、职场、房产、美妆。系统会按关键词组过滤抖音热榜，也可以直接搜索关键词相关热点视频。</div>
       </div>
       ${tip}
       <input class="config-input" id="douyinKeywordInput" value="${preset}" placeholder="如：财经热点、AI、职场、房产" onkeydown="if(event.key==='Enter') runDouyinHotSearch()" />
       <div class="helper-actions">
         <button class="helper-action primary" onclick="runDouyinHotSearch()">抓取抖音热点</button>
+        <button class="helper-action" onclick="runDouyinKeywordVideoSearch()">搜索关键词相关热点视频</button>
         <button class="helper-action" onclick="renderHelperGuide()">使用教程</button>
       </div>
     </div>
@@ -1707,6 +1718,69 @@ async function runDouyinHotSearch() {
       searchLinks: [{ label: '抖音关键词搜索', url: `https://www.douyin.com/search/${encodeURIComponent(keyword)}` }],
     });
     addLog('HOT', 'tag-hot', `<span style="color:#f87171">抖音平台热点源抓取失败：${escapeHtml(e.message)}</span>`);
+  }
+}
+
+async function runDouyinKeywordVideoSearch() {
+  const keyword = (
+    document.getElementById('douyinKeywordInput')?.value
+    || document.getElementById('cfgKeyword').value
+    || document.getElementById('cfgTopic').value
+    || ''
+  ).trim();
+  if (!keyword) {
+    renderDouyinKeywordPrompt('请先填写关键词，再搜索相关热点视频。');
+    addLog('HOT', 'tag-hot', '<span style="color:#fbbf24">请先填写关键词，再搜索相关热点视频。</span>');
+    return;
+  }
+  document.getElementById('cfgKeyword').value = keyword;
+  addLog('HOT', 'tag-hot', `准备搜索关键词相关热点视频（关键词：「${escapeHtml(keyword)}」）…`);
+
+  const status = await checkLocalHelperStatus(false);
+  if (!status) {
+    renderDouyinHelperBlocked('本机助手未连接');
+    addLog('HOT', 'tag-hot', '<span style="color:#fbbf24">关键词相关热点视频需要本机助手，当前无法抓取。</span>');
+    return;
+  }
+
+  const douyinReady = !!status.douyin_tool?.ok;
+  if (!douyinReady) {
+    renderDouyinHelperBlocked('本机助手已连接，但抖音采集服务未就绪');
+    addLog('HOT', 'tag-hot', '<span style="color:#fbbf24">抖音采集服务未就绪，无法搜索关键词相关热点视频。</span>');
+    return;
+  }
+
+  document.getElementById('outputMeta').textContent = '关键词相关热点视频搜索中…';
+  renderDouyinPlatformSources({
+    keyword,
+    loading: true,
+    items: [],
+    status: { douyin: 'indexing', douyin_video_mode: 'keyword_index' },
+    searchLinks: [],
+  });
+  try {
+    const bridge = await fetchViralBridge(keyword, '', { videoOnly: true });
+    const items = (bridge.items || []).filter(item => item.platform === 'douyin');
+    const searchLinks = (bridge.search_links || []).filter(link => String(link.label || '').includes('抖音'));
+    renderDouyinPlatformSources({
+      keyword,
+      loading: false,
+      items,
+      status: bridge.status || {},
+      searchLinks,
+    });
+    addLog('HOT', 'tag-hot', items.length
+      ? `关键词相关热点视频搜索完成：${items.length} 条，已按核心数据排序 ✓`
+      : '关键词相关热点视频暂未返回可用作品，已显示接口状态和搜索入口');
+  } catch(e) {
+    renderDouyinPlatformSources({
+      keyword,
+      loading: false,
+      items: [],
+      status: { error: e.message, douyin_video_mode: 'keyword_index', douyin_video_fallback: 'empty' },
+      searchLinks: [{ label: '抖音关键词搜索', url: `https://www.douyin.com/search/${encodeURIComponent(keyword)}` }],
+    });
+    addLog('HOT', 'tag-hot', `<span style="color:#f87171">关键词相关热点视频搜索失败：${escapeHtml(e.message)}</span>`);
   }
 }
 

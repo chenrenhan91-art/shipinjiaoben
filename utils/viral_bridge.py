@@ -842,11 +842,40 @@ def _items_to_source_text(items: list[dict[str, Any]], public_text: str = "") ->
     return "\n".join(lines).strip()
 
 
-async def search_viral_content(keyword: str, source_url: str = "", limit: int = 6) -> dict[str, Any]:
+async def search_viral_content(keyword: str, source_url: str = "", limit: int = 6, video_only: bool = False) -> dict[str, Any]:
     keyword = clean_text(keyword)
     source_url = _extract_first_url(source_url)
     status: dict[str, Any] = {}
     items: list[dict[str, Any]] = []
+
+    if video_only:
+        terms = _video_search_terms(keyword)
+        status["douyin_video_mode"] = "keyword_index"
+        status["douyin_hot"] = "skipped:keyword_video_search"
+        if terms:
+            items.extend(await _search_indexed_douyin_videos_by_terms(terms, limit, status))
+        status["douyin_video_terms"] = terms
+        status["douyin_video_fallback"] = "ok" if items else "empty"
+        status["douyin"] = "ok:keyword_videos" if items else "empty:keyword_videos"
+        items = await _enrich_douyin_items(_dedupe(items, limit), status)
+        search_links = [
+            {"label": "抖音关键词搜索", "url": DOUYIN_SEARCH_URL.format(keyword=quote(keyword))},
+        ] if keyword else []
+        return {
+            "keyword": keyword,
+            "items": items,
+            "source_text": _items_to_source_text(items),
+            "search_links": search_links,
+            "status": status,
+            "thresholds": {
+                "douyin_likes": config.douyin_like_threshold,
+                "xiaohongshu_likes": config.xiaohongshu_like_threshold,
+            },
+            "tools": {
+                "douyin": "JoeanAmier/TikTokDownloader",
+                "xiaohongshu": "JoeanAmier/XHS-Downloader",
+            },
+        }
 
     items.extend(await _detail_douyin(source_url, status))
     items.extend(await _detail_xhs(source_url, status))
