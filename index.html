@@ -591,20 +591,25 @@ function escapeHtml(s) {
 
 async function callHelper(path, options={}, timeout=10000) {
   const errors = [];
+  let httpError = '';
   for (const base of HELPER_BASES) {
     try {
       const resp = await fetch(`${base}${path}`, {
         ...options,
         signal: AbortSignal.timeout(timeout),
       });
-      if (!resp.ok) throw new Error(`${base} HTTP ${resp.status}`);
+      if (!resp.ok) {
+        httpError = `${base} HTTP ${resp.status}`;
+        errors.push(httpError);
+        continue;
+      }
       activeHelperBase = base;
       return await resp.json();
     } catch(e) {
       errors.push(e.message);
     }
   }
-  throw new Error(errors.join('；') || '本机助手不可用');
+  throw new Error(httpError || errors.join('；') || '本机助手不可用');
 }
 
 function helperSetupHtml(message='') {

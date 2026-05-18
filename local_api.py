@@ -44,6 +44,14 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def allow_private_network_access(request, call_next):
+    response = await call_next(request)
+    if request.headers.get("access-control-request-private-network") == "true":
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
+    return response
+
+
 @app.get("/api/health")
 async def health() -> dict:
     return {

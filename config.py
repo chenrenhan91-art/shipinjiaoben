@@ -34,6 +34,9 @@ class Config:
     # GitHub 抓取工具桥接服务
     douk_api_base: str = field(default_factory=lambda: os.getenv("DOUK_API_BASE", "http://127.0.0.1:5555"))
     douk_api_token: str = field(default_factory=lambda: os.getenv("DOUK_API_TOKEN", ""))
+    douk_start_cmd: str = field(default_factory=lambda: os.getenv("DOUK_START_CMD", ""))
+    douk_project_dir: str = field(default_factory=lambda: os.getenv("DOUK_PROJECT_DIR", ""))
+    douk_executable: str = field(default_factory=lambda: os.getenv("DOUK_EXECUTABLE", ""))
     xhs_api_base: str = field(default_factory=lambda: os.getenv("XHS_API_BASE", "http://127.0.0.1:5556"))
     local_api_port: int = field(default_factory=lambda: int(os.getenv("LOCAL_API_PORT", "8765")))
 
