@@ -1362,13 +1362,19 @@ function renderPlatformSourceSection(platform={}) {
   const douyinOk = String(status.douyin || status.douyin_detail || '').includes('ok') || items.some(item => item.platform === 'douyin');
   const xhsOk = String(status.xiaohongshu_detail || '').includes('ok') || items.some(item => item.platform === 'xiaohongshu');
   const keywordNoMatch = String(status.douyin_hot || '').startsWith('empty:keyword_no_match');
-  const douyinStatus = status.douyin === 'ok:hot_list' ? '热榜已返回' : status.douyin;
+  const videoFallbackEmpty = keywordNoMatch && status.douyin_video_fallback === 'empty';
+  const douyinStatus = status.douyin === 'ok:hot_list'
+    ? '热榜已返回'
+    : status.douyin === 'ok:video_fallback'
+      ? '相关视频已返回'
+      : status.douyin;
   const statusHtml = `
     <div class="platform-status">
-      <span class="platform-pill ${douyinOk ? 'ok' : 'warn'}">抖音：${douyinOk ? `已抓到 ${items.filter(i => i.platform === 'douyin').length} 条` : (keywordNoMatch ? '当前关键词无匹配热榜' : '等待作品源或登录态')}</span>
+      <span class="platform-pill ${douyinOk ? 'ok' : 'warn'}">抖音：${douyinOk ? `已抓到 ${items.filter(i => i.platform === 'douyin').length} 条` : (videoFallbackEmpty ? '热榜无匹配，相关视频无结果' : keywordNoMatch ? '当前关键词无匹配热榜' : '等待作品源或登录态')}</span>
       ${douyinOnly ? '' : `<span class="platform-pill ${xhsOk ? 'ok' : 'warn'}">小红书：${xhsOk ? `已抓到 ${items.filter(i => i.platform === 'xiaohongshu').length} 条` : '当前提供搜索/链接采集入口'}</span>`}
       ${douyinStatus ? `<span class="platform-pill">抖音接口：${escapeHtml(douyinStatus)}</span>` : ''}
       ${status.douyin_hot === 'ok' ? '<span class="platform-pill ok">抖音热榜：已接入</span>' : ''}
+      ${status.douyin_video_fallback === 'ok' ? '<span class="platform-pill ok">相关视频：按核心数据排序</span>' : ''}
       ${!douyinOnly && status.xiaohongshu_detail ? `<span class="platform-pill">小红书接口：${escapeHtml(status.xiaohongshu_detail)}</span>` : ''}
       ${status.error ? `<span class="platform-pill warn">采集错误：${escapeHtml(status.error)}</span>` : ''}
     </div>`;
@@ -1405,7 +1411,7 @@ function renderPlatformSourceSection(platform={}) {
   </div>` : '';
   const body = platform.loading
     ? '<div class="source-empty"><span class="spinner"></span> 正在通过本机助手抓取抖音/小红书平台源…</div>'
-    : (cards ? `<div class="source-grid">${cards}</div>` : `<div class="source-empty">${keywordNoMatch ? '当前关键词没有匹配到抖音热榜内容。可以换一个更具体或更宽泛的关键词再抓取。' : '暂未抓到作品卡片。可先打开平台搜索页查看源头，或确认平台登录态后刷新。'}</div>`);
+    : (cards ? `<div class="source-grid">${cards}</div>` : `<div class="source-empty">${videoFallbackEmpty ? '当前关键词没有匹配到抖音热榜，相关视频搜索也暂未返回可用内容。可以换一个更具体或更宽泛的关键词再抓取。' : keywordNoMatch ? '当前关键词没有匹配到抖音热榜内容，正在尝试转向相关视频内容。' : '暂未抓到作品卡片。可先打开平台搜索页查看源头，或确认平台登录态后刷新。'}</div>`);
 
   return `<div class="source-section">
     <div class="source-section-head">

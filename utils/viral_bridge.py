@@ -310,6 +310,47 @@ def _keyword_matches_hot_word(item: dict[str, Any], keyword: str) -> bool:
     return _hot_word_relevance(item, keyword) > 0
 
 
+def _core_video_score(item: dict[str, Any]) -> int:
+    return (
+        int(item.get("likes") or 0)
+        + int(item.get("comment_count") or 0) * 5
+        + int(item.get("share_count") or 0) * 8
+        + int(item.get("collect_count") or 0) * 3
+    )
+
+
+def _video_search_terms(keyword: str, limit: int = 6) -> list[str]:
+    terms = _keyword_terms(keyword) or [clean_text(keyword)]
+    return [term for term in dict.fromkeys(terms) if term][:limit]
+
+
+async def _search_douyin_videos_by_terms(keyword: str, limit: int, status: dict[str, Any]) -> list[dict[str, Any]]:
+    terms = _video_search_terms(keyword)
+    if not terms:
+        status["douyin_video_fallback"] = "empty:no_keyword"
+        return []
+    found: list[dict[str, Any]] = []
+    term_states: dict[str, str] = {}
+    for term in terms:
+        term_status: dict[str, Any] = {}
+        term_items = await _search_douyin(term, limit, term_status)
+        term_states[term] = term_status.get("douyin", "empty")
+        for item in term_items:
+            item["source_type"] = "video_fallback"
+            item["search_term"] = term
+            item["core_score"] = _core_video_score(item)
+        found.extend(term_items)
+        if len(_dedupe(found, limit * 2)) >= limit * 2:
+            break
+    unique = _dedupe(found, limit * 3)
+    unique.sort(key=lambda item: (item.get("core_score") or _core_video_score(item), item.get("likes") or 0), reverse=True)
+    result = _dedupe(unique, limit)
+    status["douyin_video_terms"] = terms
+    status["douyin_video_term_status"] = term_states
+    status["douyin_video_fallback"] = "ok" if result else "empty"
+    return result
+
+
 async def _fetch_douyin_hot_words(keyword: str, limit: int, status: dict[str, Any]) -> list[dict[str, Any]]:
     headers = {**_headers(), "Referer": "https://www.douyin.com/"}
     errors: list[str] = []
@@ -647,6 +688,13 @@ async def search_viral_content(keyword: str, source_url: str = "", limit: int = 
             if search_status:
                 status["douyin_search"] = search_status
             status["douyin"] = "ok:hot_list"
+        elif str(status.get("douyin_hot", "")).startswith("empty:keyword_no_match"):
+            video_items = await _search_douyin_videos_by_terms(keyword, limit, status)
+            if video_items:
+                items.extend(video_items)
+                if search_status:
+                    status["douyin_search"] = search_status
+                status["douyin"] = "ok:video_fallback"
     public_text = await _extract_public_page(source_url, status) if source_url else ""
 
     items = await _enrich_douyin_items(_dedupe(items, limit), status)
