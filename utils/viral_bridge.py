@@ -37,6 +37,8 @@ DOUYIN_KEYWORD_GROUPS = {
 }
 DOUYIN_MIN_VIDEO_LIKES = 1000
 DOUYIN_MAX_VIDEO_AGE_DAYS = 21
+DOUYIN_DIRECT_SEARCH_MAX_TERMS = 2
+DOUYIN_INDEX_FALLBACK_MAX_SECONDS = 60
 URL_RE = re.compile(r"https?://[^\s'\"<>，。；、）)】」]+", re.I)
 
 
@@ -485,7 +487,7 @@ def _indexed_candidates_from_html(text: str, term: str, limit: int) -> list[dict
     return _dedupe(candidates, limit)
 
 
-async def _search_indexed_douyin_candidates(term: str, limit: int, status: dict[str, Any]) -> list[dict[str, str]]:
+async def _search_indexed_douyin_candidates(term: str, limit: int, status: dict[str, Any], timeout_seconds: float = 12) -> list[dict[str, str]]:
     query = f"site:douyin.com/video {term} 抖音"
     jina_url = f"https://r.jina.ai/http://duckduckgo.com/html/?q={quote(query)}"
     endpoints = [
@@ -502,7 +504,7 @@ async def _search_indexed_douyin_candidates(term: str, limit: int, status: dict[
     for endpoint, params, parser in endpoints:
         try:
             async with httpx.AsyncClient(trust_env=False, follow_redirects=True) as client:
-                resp = await client.get(endpoint, params=params, headers=headers, timeout=25)
+                resp = await client.get(endpoint, params=params, headers=headers, timeout=timeout_seconds)
             resp.raise_for_status()
         except (httpx.HTTPStatusError, httpx.RequestError) as exc:
             if isinstance(exc, httpx.HTTPStatusError):
@@ -526,7 +528,9 @@ async def _search_indexed_douyin_candidates(term: str, limit: int, status: dict[
     return []
 
 
-async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, status: dict[str, Any]) -> list[dict[str, Any]]:
+async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, status: dict[str, Any], max_seconds: int = DOUYIN_INDEX_FALLBACK_MAX_SECONDS) -> list[dict[str, Any]]:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + max_seconds
     pending_terms = [term for term in dict.fromkeys(terms) if term]
     searched_terms: list[str] = []
     term_states: dict[str, str] = {}
@@ -538,15 +542,22 @@ async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, s
     max_terms = max(18, limit * 4)
     max_detail_checks = max(30, limit * 5)
 
-    while pending_terms and len(searched_terms) < max_terms and detail_checks < max_detail_checks and len(_dedupe(items, limit)) < limit:
+    while pending_terms and loop.time() < deadline and len(searched_terms) < max_terms and detail_checks < max_detail_checks and len(_dedupe(items, limit)) < limit:
         term = pending_terms.pop(0)
         if term in term_states:
             continue
+        remaining = deadline - loop.time()
+        if remaining <= 3:
+            status["douyin_index_timeout"] = f"stopped_after_{max_seconds}s"
+            break
         searched_terms.append(term)
-        term_candidates = await _search_indexed_douyin_candidates(term, max(limit * 2, 10), status)
+        term_candidates = await _search_indexed_douyin_candidates(term, max(limit * 2, 10), status, timeout_seconds=min(12, max(4, remaining / 3)))
         term_states[term] = "ok" if term_candidates else "empty"
         for candidate in term_candidates:
             raw_id = candidate.get("raw_id", "")
+            if loop.time() >= deadline:
+                status["douyin_index_timeout"] = f"stopped_after_{max_seconds}s"
+                break
             if not raw_id or raw_id in seen_ids or detail_checks >= max_detail_checks:
                 continue
             candidate_timestamp = _normalize_timestamp(candidate.get("publish_timestamp"))
@@ -616,10 +627,17 @@ async def _search_douyin_videos_by_terms(keyword: str, limit: int, status: dict[
         return []
     found: list[dict[str, Any]] = []
     term_states: dict[str, str] = {}
-    for term in terms:
+    direct_search_status = str(status.get("douyin") or "")
+    direct_terms = [] if direct_search_status.startswith("unavailable") else terms[:DOUYIN_DIRECT_SEARCH_MAX_TERMS]
+    if not direct_terms and direct_search_status:
+        status["douyin_video_direct_search"] = f"skipped:{direct_search_status}"
+    for term in direct_terms:
         term_status: dict[str, Any] = {}
         term_items = await _search_douyin(term, limit, term_status)
         term_states[term] = term_status.get("douyin", "empty")
+        if str(term_states[term]).startswith("unavailable"):
+            status["douyin_video_direct_search"] = f"stopped:{term_states[term]}"
+            break
         for item in term_items:
             item["source_type"] = "video_fallback"
             item["search_term"] = term
@@ -730,8 +748,8 @@ def _extract_comments(data: Any, limit: int = 8) -> list[str]:
     return _dedupe_comments(comments, limit)
 
 
-async def _post_json(client: httpx.AsyncClient, url: str, payload: dict[str, Any], token: str = "") -> dict[str, Any]:
-    resp = await client.post(url, json=payload, headers=_headers(token), timeout=18)
+async def _post_json(client: httpx.AsyncClient, url: str, payload: dict[str, Any], token: str = "", timeout: float = 18) -> dict[str, Any]:
+    resp = await client.post(url, json=payload, headers=_headers(token), timeout=timeout)
     resp.raise_for_status()
     return resp.json()
 
@@ -756,7 +774,7 @@ async def _search_douyin(keyword: str, limit: int, status: dict[str, Any]) -> li
     }
     try:
         async with httpx.AsyncClient(trust_env=False) as client:
-            data = await _post_json(client, url, payload, config.douk_api_token)
+            data = await _post_json(client, url, payload, config.douk_api_token, timeout=10)
         items = [i for d in _walk_dicts(data) if (i := _normalize_item(d, "douyin", "TikTokDownloader"))]
         threshold = config.douyin_like_threshold
         viral = [i for i in items if i["likes"] >= threshold]
