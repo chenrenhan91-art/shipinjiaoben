@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
@@ -35,6 +36,7 @@ DOUYIN_KEYWORD_GROUPS = {
     "美妆": ["美妆", "护肤", "口红", "面膜", "防晒", "彩妆", "穿搭", "变美", "医美"],
 }
 DOUYIN_MIN_VIDEO_LIKES = 1000
+DOUYIN_MAX_VIDEO_AGE_DAYS = 21
 URL_RE = re.compile(r"https?://[^\s'\"<>，。；、）)】」]+", re.I)
 
 
@@ -166,6 +168,42 @@ def _first_count(data: dict[str, Any], paths: list[str]) -> int:
     return 0
 
 
+def _normalize_timestamp(value: Any) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, (int, float)):
+        timestamp = int(value)
+        return timestamp // 1000 if timestamp > 100000000000 else timestamp
+    text = clean_text(str(value))
+    if not text:
+        return 0
+    if re.fullmatch(r"\d{10,13}", text):
+        timestamp = int(text)
+        return timestamp // 1000 if timestamp > 100000000000 else timestamp
+    normalized = text.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
+    except ValueError:
+        pass
+    for fmt, size in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%d %H:%M", 16), ("%Y-%m-%d", 10), ("%Y/%m/%d %H:%M:%S", 19), ("%Y/%m/%d", 10)):
+        try:
+            return int(datetime.strptime(text[:size], fmt).replace(tzinfo=timezone.utc).timestamp())
+        except ValueError:
+            continue
+    return 0
+
+
+def _first_timestamp(data: dict[str, Any], paths: list[str]) -> int:
+    for path in paths:
+        timestamp = _normalize_timestamp(_safe_get(data, path))
+        if timestamp:
+            return timestamp
+    return 0
+
+
 def _normalize_item(raw: dict[str, Any], platform: str, source: str) -> dict[str, Any] | None:
     title = _first_text(raw, [
         "title", "desc", "description", "display_title", "displayTitle", "content", "word",
@@ -200,6 +238,11 @@ def _normalize_item(raw: dict[str, Any], platform: str, source: str) -> dict[str
         "collect_count", "collectCount", "收藏数量", "statistics.collect_count", "stats.collect_count",
     ])
     duration = _first_count(raw, ["duration", "video.duration", "video_duration", "时长"])
+    publish_timestamp = _first_timestamp(raw, [
+        "create_timestamp", "create_time", "publish_time", "publishTime", "timestamp",
+        "aweme_info.create_time", "aweme_detail.create_time", "aweme_info.create_timestamp", "aweme_detail.create_timestamp",
+        "data.create_timestamp", "data.create_time",
+    ])
     script = _first_text(raw, [
         "subtitle", "字幕", "transcript", "script", "文案", "desc", "description", "title",
         "aweme_info.desc", "aweme_detail.desc", "noteCard.desc", "note_card.desc",
@@ -221,6 +264,8 @@ def _normalize_item(raw: dict[str, Any], platform: str, source: str) -> dict[str
         "share_count": share_count,
         "collect_count": collect_count,
         "duration_seconds": duration,
+        "publish_timestamp": publish_timestamp,
+        "publish_time": datetime.fromtimestamp(publish_timestamp, tz=timezone.utc).strftime("%Y-%m-%d") if publish_timestamp else "",
         "script": script,
         "comments_hot": comments,
         "raw_id": item_id,
@@ -324,6 +369,23 @@ def _video_item_passes_heat(item: dict[str, Any]) -> bool:
     return int(item.get("likes") or 0) >= DOUYIN_MIN_VIDEO_LIKES
 
 
+def _video_item_is_recent(item: dict[str, Any]) -> bool:
+    timestamp = int(item.get("publish_timestamp") or 0)
+    return _timestamp_is_recent(timestamp)
+
+
+def _timestamp_is_recent(timestamp: int) -> bool:
+    if not timestamp:
+        return False
+    published_at = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+    now = datetime.now(timezone.utc)
+    return now - timedelta(days=DOUYIN_MAX_VIDEO_AGE_DAYS) <= published_at <= now + timedelta(days=1)
+
+
+def _video_item_passes_constraints(item: dict[str, Any]) -> bool:
+    return _video_item_passes_heat(item) and _video_item_is_recent(item)
+
+
 def _extract_hashtag_terms(*texts: str, limit: int = 8) -> list[str]:
     terms: list[str] = []
     for text in texts:
@@ -363,6 +425,12 @@ def _douyin_video_ids_from_text(text: str) -> list[str]:
     return [item_id for item_id in dict.fromkeys(ids) if item_id]
 
 
+def _indexed_publish_timestamp(text: str) -> int:
+    expanded = unquote(clean_text(text))
+    match = re.search(r"20\d{2}[-/]\d{1,2}[-/]\d{1,2}(?:[T\s]\d{1,2}:\d{2}(?::\d{2})?)?", expanded)
+    return _normalize_timestamp(match.group(0)) if match else 0
+
+
 def _indexed_candidates_from_markdown(text: str, term: str, limit: int) -> list[dict[str, str]]:
     candidates: list[dict[str, str]] = []
     sections = re.split(r"\n##\s+", f"\n{text}")
@@ -375,12 +443,14 @@ def _indexed_candidates_from_markdown(text: str, term: str, limit: int) -> list[
         if not ids:
             continue
         item_id = ids[0]
+        publish_timestamp = _indexed_publish_timestamp(block_text)
         candidates.append({
             "raw_id": item_id,
             "title": title or block_text[:80],
             "url": href or f"https://www.douyin.com/video/{item_id}",
             "script": block_text,
             "search_term": term,
+            "publish_timestamp": str(publish_timestamp),
         })
         if len(candidates) >= limit:
             break
@@ -401,12 +471,14 @@ def _indexed_candidates_from_html(text: str, term: str, limit: int) -> list[dict
         if not ids:
             continue
         item_id = ids[0]
+        publish_timestamp = _indexed_publish_timestamp(block_text)
         candidates.append({
             "raw_id": item_id,
             "title": title or block_text[:80],
             "url": href or f"https://www.douyin.com/video/{item_id}",
             "script": block_text,
             "search_term": term,
+            "publish_timestamp": str(publish_timestamp),
         })
         if len(candidates) >= limit:
             break
@@ -461,6 +533,7 @@ async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, s
     items: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     filtered_low_heat = 0
+    filtered_old = 0
     detail_checks = 0
     max_terms = max(18, limit * 4)
     max_detail_checks = max(30, limit * 5)
@@ -475,6 +548,10 @@ async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, s
         for candidate in term_candidates:
             raw_id = candidate.get("raw_id", "")
             if not raw_id or raw_id in seen_ids or detail_checks >= max_detail_checks:
+                continue
+            candidate_timestamp = _normalize_timestamp(candidate.get("publish_timestamp"))
+            if candidate_timestamp and not _timestamp_is_recent(candidate_timestamp):
+                filtered_old += 1
                 continue
             seen_ids.add(raw_id)
             detail_checks += 1
@@ -493,6 +570,8 @@ async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, s
                 "comments_hot": [],
                 "raw_id": raw_id,
                 "search_term": candidate.get("search_term", ""),
+                "publish_timestamp": candidate_timestamp,
+                "publish_time": datetime.fromtimestamp(candidate_timestamp, tz=timezone.utc).strftime("%Y-%m-%d") if candidate_timestamp else "",
             }
             detail = await _detail_douyin_by_id(base["raw_id"], status)
             item = _merge_item(base, detail) if detail else base
@@ -507,10 +586,13 @@ async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, s
             for tag in related_tags:
                 if tag not in term_states and tag not in pending_terms and len(pending_terms) + len(searched_terms) < max_terms:
                     pending_terms.append(tag)
-            if item.get("core_score") and _video_item_passes_heat(item):
+            if item.get("core_score") and _video_item_passes_constraints(item):
                 items.append(item)
             elif item.get("core_score"):
-                filtered_low_heat += 1
+                if not _video_item_passes_heat(item):
+                    filtered_low_heat += 1
+                if not _video_item_is_recent(item):
+                    filtered_old += 1
             await asyncio.sleep(0.4)
             if len(_dedupe(items, limit)) >= limit:
                 break
@@ -521,7 +603,9 @@ async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, s
     status["douyin_index_terms_used"] = searched_terms
     status["douyin_index_fallback"] = "ok" if result else "empty"
     status["douyin_video_min_likes"] = DOUYIN_MIN_VIDEO_LIKES
+    status["douyin_video_max_age_days"] = DOUYIN_MAX_VIDEO_AGE_DAYS
     status["douyin_video_filtered_low_heat"] = filtered_low_heat
+    status["douyin_video_filtered_old"] = filtered_old
     return result
 
 
@@ -540,7 +624,7 @@ async def _search_douyin_videos_by_terms(keyword: str, limit: int, status: dict[
             item["source_type"] = "video_fallback"
             item["search_term"] = term
             item["core_score"] = _core_video_score(item)
-        found.extend([item for item in term_items if _video_item_passes_heat(item)])
+        found.extend([item for item in term_items if _video_item_passes_constraints(item)])
         if len(_dedupe(found, limit * 2)) >= limit * 2:
             break
     unique = _dedupe(found, limit * 3)
@@ -553,6 +637,7 @@ async def _search_douyin_videos_by_terms(keyword: str, limit: int, status: dict[
     status["douyin_video_term_status"] = term_states
     status["douyin_video_fallback"] = "ok" if result else "empty"
     status["douyin_video_min_likes"] = DOUYIN_MIN_VIDEO_LIKES
+    status["douyin_video_max_age_days"] = DOUYIN_MAX_VIDEO_AGE_DAYS
     return result
 
 
@@ -616,7 +701,7 @@ def _merge_item(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
         if key == "comments_hot":
             existing = merged.get(key) or []
             merged[key] = _dedupe_comments([*existing, *(value or [])])
-        elif value and (not merged.get(key) or key in {"likes", "comment_count", "share_count", "collect_count", "duration_seconds"}):
+        elif value and (not merged.get(key) or key in {"likes", "comment_count", "share_count", "collect_count", "duration_seconds", "publish_timestamp", "publish_time"}):
             merged[key] = value
     return merged
 
