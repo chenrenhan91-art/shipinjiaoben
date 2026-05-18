@@ -354,7 +354,7 @@ select.config-input option { background: var(--bg3); }
 .helper-action.primary:hover { color: #fff; background: #4a58e8; }
 .helper-status-line { font-size: 11px; color: var(--muted); }
 
-/* ── 源视频拆解过程 ── */
+/* ── 文案洗稿说明 ── */
 .rewrite-panel {
   background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
   padding: 14px 16px; margin-bottom: 16px;
@@ -1017,53 +1017,37 @@ function renderRewriteProcessPanel(topic, scripts=[]) {
 
   const mainSource = sources[0] || {};
   const firstScript = scripts[0] || trace.finalScript || {};
-  const sourceTitle = compactText(mainSource.title || topic || '源视频文案', 86);
   const sourceScript = compactText(mainSource.script || trace.sourceContent || '源视频文案、评论和互动数据会在这里汇总。', 220);
-  const signals = extractSourceSignals(mainSource, topic);
   const draft = compactText(trace.draft || firstScript.oral_script || '', 220);
   const finalOral = compactText(firstScript.oral_script || trace.draft || '', 220);
   const viralRef = compactText(trace.viralRef || '提取开头钩子、内容骨架、情绪锚点和互动引导方式。', 150);
-  const sourceCount = sources.length || 1;
-
-  const signalHtml = signals.length
-    ? `<div class="rewrite-kpis">${signals.map(item => `<span class="rewrite-kpi">${escapeHtml(item)}</span>`).join('')}</div>`
-    : '';
+  const lengthText = trace.lengthProfile?.hasReference
+    ? `口播长度参考原文案约 ${Number(trace.lengthProfile.sourceChars || 0).toLocaleString('zh-CN')} 字，目标 ${Number(trace.lengthProfile.min || 0).toLocaleString('zh-CN')}-${Number(trace.lengthProfile.max || 0).toLocaleString('zh-CN')} 字。`
+    : '口播长度按内容自然展开，避免机械套成固定字数。';
+  const rewriteDirection = [
+    '保留原文案里的核心事实、信息密度和情绪触发点。',
+    '重写叙述顺序、句式、口语节奏和观点切入，降低原句相似度。',
+    viralRef,
+    lengthText,
+  ].filter(Boolean).join('\n');
+  const rewriteThinking = draft || finalOral || '生成后会展示新的口播表达方向。';
 
   return `<div class="rewrite-panel">
     <div class="rewrite-head">
       <div>
-        <div class="rewrite-title">源视频拆解过程</div>
-        <div class="rewrite-desc">展示当前热点源视频如何被拆成爆款要素，再重组为新的口播脚本。</div>
+        <div class="rewrite-title">原视频文案洗稿思路</div>
+        <div class="rewrite-desc">说明本轮如何基于原视频文案内容调整表达方向、口播节奏和成稿长度。</div>
       </div>
-      <span class="rewrite-badge">${sourceCount} 条源素材</span>
-    </div>
-    <div class="rewrite-flow">
-      <div class="rewrite-step">
-        <div class="rewrite-step-top"><span class="rewrite-step-num">1</span><span class="rewrite-step-name">抓取源视频</span></div>
-        <div class="rewrite-step-body"><strong>${escapeHtml(sourceTitle)}</strong><br>${escapeHtml(sourceStatsText(mainSource))}</div>
-        ${signalHtml}
-      </div>
-      <div class="rewrite-step">
-        <div class="rewrite-step-top"><span class="rewrite-step-num">2</span><span class="rewrite-step-name">拆解爆款点</span></div>
-        <div class="rewrite-step-body">${escapeHtml(viralRef)}</div>
-      </div>
-      <div class="rewrite-step">
-        <div class="rewrite-step-top"><span class="rewrite-step-num">3</span><span class="rewrite-step-name">裁缝洗稿</span></div>
-        <div class="rewrite-step-body">保留事实和信息密度，重写表达顺序、口语节奏和情绪推进，避免照搬源文案。</div>
-      </div>
-      <div class="rewrite-step">
-        <div class="rewrite-step-top"><span class="rewrite-step-num">4</span><span class="rewrite-step-name">生成新口播</span></div>
-        <div class="rewrite-step-body">输出多版本真人口播，并经过合规、口语化和专业校验。</div>
-      </div>
+      <span class="rewrite-badge">洗稿方向</span>
     </div>
     <div class="rewrite-before-after">
       <div class="rewrite-textbox">
-        <div class="rewrite-textbox-label">源文案片段</div>
+        <div class="rewrite-textbox-label">原视频文案内容</div>
         <div class="rewrite-textbox-text">${escapeHtml(sourceScript)}</div>
       </div>
       <div class="rewrite-textbox">
-        <div class="rewrite-textbox-label">洗稿初稿 / 成稿方向</div>
-        <div class="rewrite-textbox-text">${escapeHtml(draft || finalOral || '生成后会展示新的口播表达。')}</div>
+        <div class="rewrite-textbox-label">改写方向与思路</div>
+        <div class="rewrite-textbox-text">${escapeHtml(rewriteDirection)}\n\n${escapeHtml(rewriteThinking)}</div>
       </div>
     </div>
   </div>`;
