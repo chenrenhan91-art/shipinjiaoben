@@ -285,6 +285,66 @@ select.config-input option { background: var(--bg3); }
   background: rgba(139,92,246,.15); color: #a78bfa; border: 1px solid rgba(139,92,246,.2);
 }
 
+/* ── 热点源可视化 ── */
+.source-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.source-title-main { font-size: 15px; font-weight: 800; }
+.source-stats { font-size: 11px; color: var(--muted); }
+.source-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.source-chip {
+  font-size: 11px; padding: 3px 8px; border-radius: 20px;
+  color: var(--muted); background: var(--bg3); border: 1px solid var(--border);
+  cursor: pointer; transition: all .2s;
+}
+.source-chip.active { color: #fff; background: var(--accent); border-color: var(--accent); }
+.source-chip:hover { border-color: var(--accent); color: #818cf8; }
+.source-chip.active:hover { color: #fff; }
+.source-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.source-card {
+  min-height: 138px; display: flex; flex-direction: column; gap: 8px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px; transition: border-color .2s, transform .2s;
+}
+.source-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.source-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.source-platform { font-size: 11px; color: #a78bfa; font-weight: 700; }
+.source-heat { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.source-card-title {
+  color: var(--text); font-size: 13px; font-weight: 700; line-height: 1.55;
+  text-decoration: none; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.source-card-title:hover { color: #818cf8; }
+.source-summary { color: var(--muted); font-size: 12px; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.source-actions { margin-top: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.source-open, .source-use {
+  font-size: 12px; font-weight: 700; border-radius: 7px; padding: 5px 9px;
+  border: 1px solid var(--border); text-decoration: none; cursor: pointer; background: transparent;
+}
+.source-open { color: var(--accent); }
+.source-use { color: var(--text); }
+.source-open:hover, .source-use:hover { border-color: var(--accent); }
+.source-empty { color: var(--muted); padding: 24px 0; text-align: center; }
+.helper-panel {
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px; display: grid; gap: 12px;
+}
+.helper-panel-title { font-size: 15px; font-weight: 800; }
+.helper-panel-text { color: var(--muted); font-size: 12px; line-height: 1.7; }
+.helper-steps { display: grid; gap: 8px; }
+.helper-step { display: grid; grid-template-columns: 24px 1fr; gap: 8px; align-items: start; }
+.helper-step-num { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 800; }
+.helper-step-title { color: var(--text); font-size: 12px; font-weight: 800; margin-bottom: 2px; }
+.helper-step-text { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.helper-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.helper-action {
+  font-size: 12px; font-weight: 700; border-radius: 7px; padding: 6px 10px;
+  border: 1px solid var(--border); color: var(--text); background: transparent;
+  text-decoration: none; cursor: pointer;
+}
+.helper-action.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.helper-action:hover { border-color: var(--accent); color: #818cf8; }
+.helper-action.primary:hover { color: #fff; background: #4a58e8; }
+.helper-status-line { font-size: 11px; color: var(--muted); }
+
 
 
 /* ── 滚动条 ── */
@@ -354,6 +414,15 @@ select.config-input option { background: var(--bg3); }
         <div class="config-label">指定参考链接（可选）</div>
         <input class="config-input" id="cfgSourceUrl" placeholder="粘贴抖音视频或文章链接，可作为洗稿素材" />
       </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">热点源</div>
+      <button class="btn btn-outline" style="width:100%;margin-bottom:8px" onclick="loadHotSources()">↗ 抓取热点源</button>
+      <button class="btn btn-outline" style="width:100%;margin-bottom:8px" onclick="checkLocalHelperStatus(true)">检测本机助手</button>
+      <a class="btn btn-outline" style="display:block;width:100%;text-align:center;text-decoration:none;margin-bottom:8px" href="scripts/shipinjiaoben_collector_installer.zip" download>下载 macOS 助手</a>
+      <button class="btn btn-outline" style="width:100%;margin-bottom:8px" onclick="renderHelperGuide()">使用教程</button>
+      <div id="hotSourceHint" style="font-size:11px;color:var(--muted);line-height:1.6">普通用户安装助手后，网页只调用本机采集服务抓取热点源。</div>
     </div>
 
   </div>
@@ -480,6 +549,11 @@ let currentMode = 1;
 let isRunning = false;
 const DEFAULT_API_BASE = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 const DEFAULT_MODEL = 'qwen3.6-flash';
+const HELPER_BASES = ['http://127.0.0.1:8765', 'http://127.0.0.1:8776'];
+const HELPER_INSTALLER_URL = new URL('scripts/shipinjiaoben_collector_installer.zip', window.location.href).href;
+const HELPER_GUIDE_URL = new URL('docs/helper-guide.md', window.location.href).href;
+const HELPER_INSTALL_COMMAND = `cd ~/Downloads && curl -fL "${HELPER_INSTALLER_URL.replace(/"/g, '\\"')}" -o shipinjiaoben_collector_installer.zip && rm -rf shipinjiaoben_collector_installer && mkdir shipinjiaoben_collector_installer && unzip -o shipinjiaoben_collector_installer.zip -d shipinjiaoben_collector_installer && open shipinjiaoben_collector_installer/Collector_Helper_Installer.app`;
+let activeHelperBase = '';
 
 // ═══════════════════════════════════
 // 模式切换
@@ -513,6 +587,140 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function escapeHtml(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function callHelper(path, options={}, timeout=10000) {
+  const errors = [];
+  for (const base of HELPER_BASES) {
+    try {
+      const resp = await fetch(`${base}${path}`, {
+        ...options,
+        signal: AbortSignal.timeout(timeout),
+      });
+      if (!resp.ok) throw new Error(`${base} HTTP ${resp.status}`);
+      activeHelperBase = base;
+      return await resp.json();
+    } catch(e) {
+      errors.push(e.message);
+    }
+  }
+  throw new Error(errors.join('；') || '本机助手不可用');
+}
+
+function helperSetupHtml(message='') {
+  const detail = message ? `<div class="helper-status-line" style="color:#fbbf24">${escapeHtml(message)}</div>` : '';
+  return `<div class="helper-panel">
+    <div>
+      <div class="helper-panel-title">需要本机采集助手</div>
+      <div class="helper-panel-text">这个网页不连接你的云端后端。用户安装助手后，页面只请求自己电脑上的 127.0.0.1 服务来抓取热点源和源头素材。</div>
+    </div>
+    ${detail}
+    <div class="helper-actions">
+      <a class="helper-action primary" href="${HELPER_INSTALLER_URL}" download>下载 macOS 助手</a>
+      <button class="helper-action" onclick="copyHelperInstallCommand()">复制安装命令</button>
+      <button class="helper-action" onclick="checkLocalHelperStatus(true)">检测助手</button>
+      <button class="helper-action" onclick="renderHelperGuide()">使用教程</button>
+    </div>
+    <div class="helper-panel-text">下载后解压并打开 Collector_Helper_Installer.app。安装完成后回到网页点击“检测助手”或“抓取热点源”。抖音/小红书作品级素材需要用户在本机完成平台登录。</div>
+  </div>`;
+}
+
+function renderHelperSetupPanel(message='') {
+  document.getElementById('outputPlaceholder').style.display = 'none';
+  document.getElementById('outputContent').style.display = 'block';
+  document.getElementById('exportBtn').style.display = 'none';
+  document.getElementById('outputMeta').textContent = '本机助手未就绪';
+  document.getElementById('outputContent').innerHTML = helperSetupHtml(message);
+}
+
+function renderHelperGuide() {
+  document.getElementById('outputPlaceholder').style.display = 'none';
+  document.getElementById('outputContent').style.display = 'block';
+  document.getElementById('exportBtn').style.display = 'none';
+  document.getElementById('outputMeta').textContent = '本机助手使用教程';
+  document.getElementById('outputContent').innerHTML = `<div class="helper-panel">
+    <div>
+      <div class="helper-panel-title">本机采集助手使用教程</div>
+      <div class="helper-panel-text">按下面步骤完成安装后，网页会调用用户自己电脑上的本机助手抓取热点源。</div>
+    </div>
+    <div class="helper-steps">
+      <div class="helper-step"><span class="helper-step-num">1</span><div><div class="helper-step-title">下载并解压助手</div><div class="helper-step-text">点击「下载 macOS 助手」，解压 shipinjiaoben_collector_installer.zip。</div></div></div>
+      <div class="helper-step"><span class="helper-step-num">2</span><div><div class="helper-step-title">打开安装器</div><div class="helper-step-text">打开 Collector_Helper_Installer.app。如果 macOS 拦截，在「系统设置 > 隐私与安全性」里允许打开。</div></div></div>
+      <div class="helper-step"><span class="helper-step-num">3</span><div><div class="helper-step-title">检测本机助手</div><div class="helper-step-text">安装完成后回到网页，点击「检测本机助手」。连接成功后会显示助手端口和登录态状态。</div></div></div>
+      <div class="helper-step"><span class="helper-step-num">4</span><div><div class="helper-step-title">抓取热点源</div><div class="helper-step-text">点击「抓取热点源」，再用平台按钮筛选来源，或点击「打开源头」查看原始页面。</div></div></div>
+      <div class="helper-step"><span class="helper-step-num">5</span><div><div class="helper-step-title">配置作品级采集</div><div class="helper-step-text">需要抖音/小红书作品详情、点赞、评论、文案时，先在本机完成平台登录态配置。</div></div></div>
+    </div>
+    <div class="helper-actions">
+      <a class="helper-action primary" href="${HELPER_INSTALLER_URL}" download>下载 macOS 助手</a>
+      <button class="helper-action" onclick="copyHelperInstallCommand()">复制安装命令</button>
+      <button class="helper-action" onclick="checkLocalHelperStatus(true)">检测助手</button>
+      <a class="helper-action" href="${HELPER_GUIDE_URL}" target="_blank" rel="noopener noreferrer">打开完整文档</a>
+    </div>
+    <div class="helper-panel-text">公开热榜通常可直接抓取；抖音/小红书作品级数据取决于本机采集工具、登录态和平台风控。</div>
+  </div>`;
+}
+
+async function copyHelperInstallCommand() {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(HELPER_INSTALL_COMMAND);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = HELPER_INSTALL_COMMAND;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    addLog('SYS', 'tag-sys', '已复制本机助手安装命令');
+  } catch(e) {
+    addLog('SYS', 'tag-sys', `复制失败：${e.message}`);
+  }
+}
+
+async function checkLocalHelperStatus(showPanel=false) {
+  try {
+    const status = await callHelper('/api/helper/status', {}, 8000);
+    const douyinReady = status.douyin_tool?.ok ? '抖音采集服务已连接' : '抖音采集服务未启动';
+    const cookieReady = status.douyin_cookie?.configured ? '登录态已配置' : '登录态未配置';
+    document.getElementById('hotSourceHint').textContent = `助手已连接：${activeHelperBase}，${douyinReady}，${cookieReady}`;
+    document.getElementById('badgeLive').textContent = '● 助手已连接';
+    addLog('SYS', 'tag-sys', `本机助手已连接：${activeHelperBase}`);
+    if (showPanel) {
+      document.getElementById('outputPlaceholder').style.display = 'none';
+      document.getElementById('outputContent').style.display = 'block';
+      document.getElementById('exportBtn').style.display = 'none';
+      document.getElementById('outputMeta').textContent = '本机助手已连接';
+      document.getElementById('outputContent').innerHTML = `<div class="helper-panel">
+        <div>
+          <div class="helper-panel-title">本机助手已连接</div>
+          <div class="helper-panel-text">当前端口：${escapeHtml(activeHelperBase)}。公开热榜可以直接抓取；抖音/小红书作品级源头需要本机登录态。</div>
+        </div>
+        <div class="helper-status-line">${escapeHtml(douyinReady)} · ${escapeHtml(cookieReady)}</div>
+        <div class="helper-actions">
+          <button class="helper-action primary" onclick="loadHotSources()">抓取热点源</button>
+          <button class="helper-action" onclick="openDouyinLoginFromHelper()">打开抖音登录</button>
+          <button class="helper-action" onclick="renderHelperGuide()">使用教程</button>
+        </div>
+      </div>`;
+    }
+    return status;
+  } catch(e) {
+    document.getElementById('hotSourceHint').textContent = '未检测到本机助手，请先下载安装。';
+    document.getElementById('badgeLive').textContent = '● 等待助手';
+    if (showPanel) renderHelperSetupPanel(e.message);
+    return null;
+  }
+}
+
+async function openDouyinLoginFromHelper() {
+  try {
+    await callHelper('/api/helper/open-douyin-login', { method: 'POST' }, 8000);
+    addLog('SYS', 'tag-sys', '已打开抖音官方登录页');
+  } catch(e) {
+    window.open('https://www.douyin.com/?recommend=1', '_blank', 'noopener,noreferrer');
+    addLog('SYS', 'tag-sys', '本机助手未响应，已直接打开抖音页面');
+  }
 }
 
 // ═══════════════════════════════════
@@ -684,13 +892,15 @@ function renderOutput(topic, scripts, review, topics) {
     <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:700;letter-spacing:.5px;text-transform:uppercase">Top 选题</div>
     <div class="topic-grid">`;
   topics.forEach((t, i) => {
+    const topicTitle = escapeHtml(t.topic || t.title || `选题 ${i+1}`);
+    const topicScore = displayTopicScore(t);
     html += `<div class="topic-mini ${i===0?'selected':''}" onclick="selectTopic(this)">
-      <div class="topic-mini-title">${t.topic}</div>
+      <div class="topic-mini-title">${topicTitle}</div>
       <div class="topic-mini-score">
-        <div class="score-bar"><div class="score-fill" style="width:${t.score}%"></div></div>
-        <span class="score-val">${t.score}</span>
+        <div class="score-bar"><div class="score-fill" style="width:${topicScore}%"></div></div>
+        <span class="score-val">${topicScore}</span>
       </div>
-      <div class="criteria-tags">${(t.criteria||[]).map(c=>`<span class="criteria-tag">${c}</span>`).join('')}</div>
+      <div class="criteria-tags">${(t.criteria||[]).map(c=>`<span class="criteria-tag">${escapeHtml(c)}</span>`).join('')}</div>
     </div>`;
   });
   html += `</div></div>`;
@@ -715,6 +925,13 @@ function renderOutput(topic, scripts, review, topics) {
         const shares = Number(s.share_count || 0).toLocaleString('zh-CN');
         const collects = Number(s.collect_count || 0).toLocaleString('zh-CN');
         html += `<div style="font-size:12px;line-height:1.6;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px"><strong>${platform}</strong> · ${likes}赞 · ${comments}评 · ${shares}转 · ${collects}藏 · ${url ? `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);word-break:break-all">${title}</a>` : title}</div>`;
+      });
+      html += `</div>`;
+    }
+    if (srcLinks.hotTopicSources?.length) {
+      html += `<div style="font-size:12px;color:var(--muted);margin-bottom:6px">本轮热点源：</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">`;
+      srcLinks.hotTopicSources.forEach(s => {
+        html += `<a href="${escapeHtml(s.url)}" target="_blank" rel="noopener noreferrer" style="font-size:12px;color:var(--accent);background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:4px 12px;text-decoration:none">${escapeHtml(s.source || '热点源')} · ${escapeHtml((s.topic || s.title || '').slice(0, 18))}</a>`;
       });
       html += `</div>`;
     }
@@ -966,78 +1183,164 @@ function normalizeReferenceUrl(value) {
   return /^https?:\/\//i.test(url) ? url : '';
 }
 
-function htmlToPlainText(raw) {
-  return String(raw || '')
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 async function fetchUrlContent(urlInput) {
   const url = normalizeReferenceUrl(urlInput);
   if (!url) throw new Error('请输入有效的 http/https 参考链接');
-  const errors = [];
-
   try {
-    const resp = await fetch('http://127.0.0.1:8765/api/source/extract', {
+    const data = await callHelper('/api/source/extract', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ source_url: url }),
-      signal: AbortSignal.timeout(35000),
-    });
-    if (!resp.ok) throw new Error(`本机服务 HTTP ${resp.status}`);
-    const data = await resp.json();
+    }, 35000);
     const text = String(data.source_text || '').trim();
     if (text.length >= 50) return text.slice(0, 4000);
-    errors.push(data.status?.source_url === 'invalid' ? '链接格式无效' : '本机提取内容为空');
+    throw new Error(data.status?.source_url === 'invalid' ? '链接格式无效' : '本机提取内容为空');
   } catch(e) {
-    errors.push(`本机提取不可用：${e.message}`);
+    throw new Error(`本机助手提取失败：${e.message}`);
   }
-
-  const proxyAttempts = [
-    async () => {
-      const resp = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(15000) });
-      if (!resp.ok) throw new Error(`AllOrigins ${resp.status}`);
-      const data = await resp.json();
-      return htmlToPlainText(data.contents || '');
-    },
-    async () => {
-      const resp = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(15000) });
-      if (!resp.ok) throw new Error(`AllOriginsRaw ${resp.status}`);
-      return htmlToPlainText(await resp.text());
-    },
-    async () => {
-      const resp = await fetch(`https://r.jina.ai/http://${url}`, { signal: AbortSignal.timeout(20000) });
-      if (!resp.ok) throw new Error(`Jina ${resp.status}`);
-      return htmlToPlainText(await resp.text());
-    },
-  ];
-
-  for (const attempt of proxyAttempts) {
-    try {
-      const text = await attempt();
-      if (text.length >= 50) return text.slice(0, 4000);
-      errors.push('公共代理返回内容过短');
-    } catch(e) {
-      errors.push(e.message);
-    }
-  }
-  throw new Error(errors.slice(0, 2).join('；') || '链接内容提取失败');
 }
 
 async function fetchViralBridge(keyword, sourceUrl) {
   const limit = 6;
-  const resp = await fetch('http://127.0.0.1:8765/api/viral/search', {
+  await callHelper('/api/helper/start', { method: 'POST' }, 35000).catch(() => null);
+  return await callHelper('/api/viral/search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ keyword, source_url: sourceUrl || '', limit }),
-    signal: AbortSignal.timeout(90000),
-  });
-  if (!resp.ok) throw new Error(`本地采集服务 HTTP ${resp.status}`);
-  return await resp.json();
+  }, 90000);
+}
+
+async function fetchHotTopics(limit=80) {
+  return await callHelper(`/api/hot/topics?limit=${limit}`, {}, 45000);
+}
+
+function clampScore(n) {
+  const value = Number(n || 0);
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function displayTopicScore(topic) {
+  if (Number.isFinite(Number(topic.score))) return clampScore(topic.score);
+  const heat = Number(topic.heat_score || 0);
+  if (!heat) return 60;
+  if (heat <= 100) return clampScore(heat);
+  return clampScore(Math.log10(heat + 1) * 18);
+}
+
+function formatHeat(value) {
+  const n = Number(value || 0);
+  if (!n) return '热度 --';
+  if (n >= 100000000) return `${(n / 100000000).toFixed(1)}亿热度`;
+  if (n >= 10000) return `${(n / 10000).toFixed(1)}万热度`;
+  return `${Math.round(n).toLocaleString('zh-CN')}热度`;
+}
+
+function renderHotSources(topics, meta={}) {
+  topics = topics || [];
+  const activeSource = meta.activeSource || window._activeHotSource || '全部';
+  window._allHotSources = topics;
+  window._hotSourceMeta = meta;
+  window._activeHotSource = activeSource;
+  const filteredTopics = activeSource === '全部'
+    ? topics
+    : topics.filter(item => String(item.source || '未知来源').split('/')[0] === activeSource);
+  window._hotSources = filteredTopics;
+  document.getElementById('outputPlaceholder').style.display = 'none';
+  document.getElementById('outputContent').style.display = 'block';
+  document.getElementById('exportBtn').style.display = 'none';
+  document.getElementById('outputMeta').textContent = `热点源：${filteredTopics.length} 条`;
+
+  if (!topics.length) {
+    document.getElementById('outputContent').innerHTML = '<div class="source-empty">暂未抓到热点源。可以稍后重试，或检查本机助手是否运行。</div>';
+    return;
+  }
+
+  const summary = meta.source_summary || topics.reduce((acc, item) => {
+    const key = String(item.source || '未知来源').split('/')[0];
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const chips = Object.entries(summary)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count]) => `<button class="source-chip ${activeSource===name?'active':''}" onclick="filterHotSources('${escapeJsArg(name)}')">${escapeHtml(name)} · ${count}</button>`)
+    .join('');
+  const allChip = `<button class="source-chip ${activeSource==='全部'?'active':''}" onclick="filterHotSources('全部')">全部 · ${topics.length}</button>`;
+
+  const cards = filteredTopics.map((item, idx) => {
+    const title = escapeHtml(item.title || item.topic || `热点 ${idx + 1}`);
+    const source = escapeHtml(item.source || '未知来源');
+    const summaryText = escapeHtml(item.summary || (item.tags || []).join(' / '));
+    const url = escapeHtml(item.url || '');
+    const openLink = url
+      ? `<a class="source-open" href="${url}" target="_blank" rel="noopener noreferrer">打开源头</a>`
+      : '<span class="source-heat">暂无源链</span>';
+    const titleNode = url
+      ? `<a class="source-card-title" href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>`
+      : `<div class="source-card-title">${title}</div>`;
+    return `<div class="source-card">
+      <div class="source-card-head">
+        <span class="source-platform">${source}</span>
+        <span class="source-heat">${formatHeat(item.heat_score)}</span>
+      </div>
+      ${titleNode}
+      ${summaryText ? `<div class="source-summary">${summaryText}</div>` : '<div class="source-summary">点击源头查看平台原始页面或搜索结果。</div>'}
+      <div class="source-actions">
+        ${openLink}
+        <button class="source-use" onclick="useHotSource(${idx})">用作选题</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('outputContent').innerHTML = `<div>
+    <div class="source-toolbar">
+      <div>
+        <div class="source-title-main">近期热点信息源</div>
+        <div class="source-stats">共 ${meta.total || topics.length} 条，已展示 ${filteredTopics.length} 条；头条/百度/微博等公开榜单无需登录，抖音/小红书作品级数据需本机登录态。</div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="loadHotSources()">刷新</button>
+    </div>
+    <div class="source-chips">${allChip}${chips}</div>
+    ${filteredTopics.length ? `<div class="source-grid">${cards}</div>` : `<div class="source-empty">该平台暂无信息源。</div>`}
+  </div>`;
+}
+
+function escapeJsArg(s) {
+  return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' ');
+}
+
+function filterHotSources(sourceName) {
+  const topics = window._allHotSources || [];
+  const meta = { ...(window._hotSourceMeta || {}), activeSource: sourceName || '全部' };
+  renderHotSources(topics, meta);
+}
+
+function useHotSource(index) {
+  const item = (window._hotSources || [])[index];
+  if (!item) return;
+  const title = item.title || item.topic || '';
+  document.getElementById('cfgTopic').value = title;
+  document.getElementById('cfgKeyword').value = title.slice(0, 18);
+  addLog('HOT', 'tag-hot', `已选择热点源作为本轮选题：「${escapeHtml(title)}」`);
+  document.getElementById('pipelineStatus').textContent = '已选择热点源，点击开始生成…';
+}
+
+async function loadHotSources() {
+  document.getElementById('outputPlaceholder').style.display = 'none';
+  document.getElementById('outputContent').style.display = 'block';
+  document.getElementById('outputMeta').textContent = '热点源抓取中…';
+  document.getElementById('exportBtn').style.display = 'none';
+  document.getElementById('outputContent').innerHTML = '<div class="source-empty"><span class="spinner"></span> 正在抓取多平台热点源…</div>';
+  addLog('HOT', 'tag-hot', '开始抓取近期热点信息源…');
+  try {
+    const data = await fetchHotTopics(80);
+    renderHotSources(data.topics || [], data);
+    addLog('HOT', 'tag-hot', `热点源抓取完成：${(data.topics || []).length} 条，可点击跳转源头 ✓`);
+  } catch(e) {
+    document.getElementById('outputMeta').textContent = '热点源抓取失败';
+    const hint = e.message.includes('HTTP 404') ? '检测到旧版本机助手，请重新下载安装最新版。' : `本机助手未连接或接口不可用：${e.message}`;
+    renderHelperSetupPanel(hint);
+    addLog('HOT', 'tag-hot', `<span style="color:#f87171">热点源抓取失败：${escapeHtml(e.message)}</span>`);
+  }
 }
 
 // ═══════════════════════════════════
@@ -1048,7 +1351,6 @@ async function runRealPipeline(forceTopic) {
   const keyword = document.getElementById('cfgKeyword').value.trim();
   const rawSourceUrl = document.getElementById('cfgSourceUrl').value.trim();
   const sourceUrl = normalizeReferenceUrl(rawSourceUrl);
-  const todayStr = new Date().toLocaleDateString('zh-CN');
   let topics = [], winner, draft, scripts, review;
 
   if (forceTopic) {
@@ -1068,9 +1370,31 @@ async function runRealPipeline(forceTopic) {
     if (manualTopic) {
       topics = [{ topic: manualTopic, heat_score: 90 }];
     } else {
-      const keywordHint = keyword ? `围绕关键词「${keyword}」，` : '';
-      const sys1 = `你是财经短视频运营专家。${keywordHint}生成3个当前热门财经短视频选题，具有强信息差或情绪共鸣。来源参考：抖音热搜、小红书热榜、微博热搜、百度热榜。输出纯JSON数组（不要代码块）：[{"topic":"标题","heat_score":85,"source":"平台来源"},...]`;
-      topics = await callLLMJson(sys1, `今天是${todayStr}，${keywordHint}生成3个最有爆款潜力的财经短视频选题（宏观政策/个人理财/市场热点）。`);
+      try {
+        const hotData = await fetchHotTopics(60);
+        const hotTopics = hotData.topics || [];
+        window._hotSources = hotTopics;
+        const matched = keyword ? hotTopics.filter(t => `${t.title || ''} ${t.summary || ''}`.includes(keyword)) : hotTopics;
+        const candidates = (matched.length ? matched : hotTopics).slice(0, 6);
+        topics = candidates.map(t => ({
+          topic: t.title,
+          heat_score: t.heat_score || 80,
+          source: t.source,
+          url: t.url,
+          summary: t.summary,
+        }));
+        addLog('HOT', 'tag-hot', `真实热点源 ${hotTopics.length} 条，送入候选 ${topics.length} 条`);
+      } catch(e) {
+        const hint = e.message.includes('HTTP 404') ? '检测到旧版本机助手，请重新下载安装最新版。' : `请先安装或启动本机助手：${e.message}`;
+        renderHelperSetupPanel(hint);
+        addLog('HOT', 'tag-hot', `<span style="color:#f87171">${escapeHtml(hint)}</span>`);
+        throw new Error(hint);
+      }
+      if (!topics.length) {
+        const hint = '本机助手没有返回热点源，请稍后刷新或重新安装助手。';
+        renderHelperSetupPanel(hint);
+        throw new Error(hint);
+      }
       topics.forEach((t, i) => addLog('HOT', 'tag-hot', `  #${i+1} [${t.source||'热榜'}] ${t.topic}`));
     }
     addLog('HOT', 'tag-hot', `共 ${topics.length} 个候选选题`);
@@ -1103,6 +1427,7 @@ async function runRealPipeline(forceTopic) {
   window._sourceLinks = {
     topic: winner.topic,
     userUrl: sourceUrl || '',
+    hotTopicSources: topics.filter(t => t.url).slice(0, 6),
     scrapedSources: [],
     toolStatus: {},
     searchLinks: [
@@ -1151,7 +1476,7 @@ async function runRealPipeline(forceTopic) {
     if (scrapedSources.length) {
       addLog('CONTENT', 'tag-content', `真实来源抓取完成：${scrapedSources.length} 条（含链接/点赞/文案字段）✓`);
     } else {
-      addLog('CONTENT', 'tag-content', `未抓到真实作品数据，请确认本机采集服务已启动，并完成平台登录`);
+      addLog('CONTENT', 'tag-content', `未抓到真实作品数据，请确认本机采集助手已运行，并完成平台登录`);
     }
   } catch(e) {
     addLog('CONTENT', 'tag-content', `本地采集服务未连接（${e.message}），改用页面正文/LLM 降级`);
@@ -1367,10 +1692,13 @@ function exportScripts() {
       return `<div style="font-size:12px;line-height:1.6;background:#fff;border:1px solid #dde0f0;border-radius:8px;padding:8px 10px"><strong>${platform}</strong> · ${likes}赞 · ${comments}评 · ${shares}转 · ${collects}藏 · ${url ? `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color:#5b6af8;word-break:break-all">${title}</a>` : title}</div>`;
     }).join('')}</div>` : '';
   const statusHtml = srcLinks?.toolStatus && Object.keys(srcLinks.toolStatus).length ? `<div style="font-size:11px;color:#888;margin-bottom:8px">工具状态：${esc(JSON.stringify(srcLinks.toolStatus))}</div>` : '';
+  const hotTopicHtml = srcLinks?.hotTopicSources?.length ? `<div style="font-size:12px;color:#888;margin-bottom:6px">本轮热点源：</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${srcLinks.hotTopicSources.map(s => `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer" style="font-size:12px;color:#5b6af8;background:#fff;border:1px solid #dde0f0;border-radius:20px;padding:3px 12px;text-decoration:none">${esc(s.source || '热点源')} · ${esc((s.topic || s.title || '').slice(0, 18))}</a>`).join('')}</div>` : '';
   const srcHtml = srcLinks ? `<div style="background:#f0f1f8;border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:13px">
     <div style="font-size:11px;font-weight:700;color:#888;letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px">📎 来源参考</div>
     ${srcLinks.userUrl ? `<div style="margin-bottom:8px"><span style="color:#888">原始素材：</span><a href="${esc(srcLinks.userUrl)}" target="_blank" rel="noopener noreferrer" style="color:#5b6af8;word-break:break-all">${esc(srcLinks.userUrl)}</a></div>` : ''}
     ${scrapedHtml}
+    ${hotTopicHtml}
     ${statusHtml}
     <div style="font-size:12px;color:#888;margin-bottom:6px">同类爆款搜索：</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px">${(srcLinks.searchLinks||[]).map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer" style="font-size:12px;color:#5b6af8;background:#fff;border:1px solid #dde0f0;border-radius:20px;padding:3px 12px;text-decoration:none">${esc(l.label)}</a>`).join('')}</div>
@@ -1462,6 +1790,8 @@ function exportScripts() {
   }
   restoreBtn();
 }
+
+checkLocalHelperStatus(false);
 
 </script>
 </body>

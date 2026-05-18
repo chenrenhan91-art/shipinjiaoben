@@ -11,6 +11,7 @@ import feedparser
 import aiohttp
 from datetime import datetime
 from typing import List
+from urllib.parse import quote
 from data_models import HotTopic, ViralVideo
 from utils.text_utils import clean_text
 
@@ -22,6 +23,10 @@ HEADERS = {
     ),
     "Referer": "https://weibo.com/",
 }
+
+
+def _keyword_url(template: str, keyword: str) -> str:
+    return template.format(keyword=quote(keyword or ""))
 
 # ──────────────────────────────────────────────
 # RSS 财经/科技资讯源（经实测可用）
@@ -93,6 +98,7 @@ async def fetch_weibo_hot() -> List[HotTopic]:
                 topics.append(HotTopic(
                     title=word,
                     source="微博热搜",
+                    url=_keyword_url("https://s.weibo.com/weibo?q={keyword}", word),
                     summary=note,
                     heat_score=float(num),
                     tags=["热搜", "微博"],
@@ -116,7 +122,7 @@ async def fetch_baidu_hot() -> List[HotTopic]:
             title = clean_text(item.get("word", "") or item.get("title", ""))
             desc = clean_text(item.get("desc", ""))
             hot_score = float(item.get("hotScore", 0))
-            url_link = item.get("url", "")
+            url_link = item.get("url", "") or _keyword_url("https://www.baidu.com/s?wd={keyword}", title)
             if title:
                 topics.append(HotTopic(
                     title=title,
@@ -142,12 +148,22 @@ async def fetch_toutiao_hot() -> List[HotTopic]:
         items = data.get("data", [])
         for item in items[:30]:
             title = clean_text(item.get("Title", ""))
-            label = item.get("LabelUrl", "")
+            label = clean_text(item.get("Label", "") or item.get("LabelDesc", "") or item.get("LabelUrl", ""))
             hot_score = float(item.get("HotScore", item.get("HotValue", 0)))
+            cluster_id = item.get("ClusterId") or item.get("ClusterID") or item.get("cluster_id")
+            url_link = (
+                item.get("Url")
+                or item.get("url")
+                or item.get("ArticleUrl")
+                or item.get("OpenUrl")
+                or (f"https://www.toutiao.com/trending/{cluster_id}/" if cluster_id else "")
+                or _keyword_url("https://so.toutiao.com/search?keyword={keyword}", title)
+            )
             if title:
                 topics.append(HotTopic(
                     title=title,
                     source="今日头条热榜",
+                    url=url_link,
                     summary=label[:200],
                     heat_score=hot_score,
                     tags=["热搜", "头条"],
@@ -207,7 +223,7 @@ async def fetch_douyin_hot() -> List[HotTopic]:
                 title = clean_text(str(item.get(title_key, "")))
                 heat_raw = str(item.get(heat_key, "0")).replace(",", "").strip() or "0"
                 heat = float(heat_raw) if heat_raw.replace(".", "").isdigit() else 0.0
-                link = str(item.get("url", item.get("link", "")))
+                link = str(item.get("url", item.get("link", ""))) or _keyword_url("https://www.douyin.com/search/{keyword}", title)
                 if title:
                     topics.append(HotTopic(
                         title=title,
@@ -240,7 +256,7 @@ async def fetch_xiaohongshu_hot() -> List[HotTopic]:
                 title = clean_text(str(item.get(title_key, "")))
                 heat_raw = str(item.get(heat_key, "0")).replace(",", "").strip() or "0"
                 heat = float(heat_raw) if heat_raw.replace(".", "").isdigit() else 0.0
-                link = str(item.get("url", item.get("link", "")))
+                link = str(item.get("url", item.get("link", ""))) or _keyword_url("https://www.xiaohongshu.com/search_result?keyword={keyword}", title)
                 if title:
                     topics.append(HotTopic(
                         title=title,
