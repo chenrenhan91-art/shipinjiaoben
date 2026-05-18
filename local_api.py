@@ -100,8 +100,9 @@ async def viral_search(req: ViralSearchRequest) -> dict:
 async def hot_topics(limit: int = 80) -> dict:
     limit = max(1, min(limit, 120))
     topics = await fetch_all_hot_topics()
+    limited_topics = topics[:limit]
     source_summary: dict[str, int] = {}
-    for topic in topics:
+    for topic in limited_topics:
         source_name = topic.source.split("/")[0]
         source_summary[source_name] = source_summary.get(source_name, 0) + 1
     return {
@@ -109,7 +110,7 @@ async def hot_topics(limit: int = 80) -> dict:
         "total": len(topics),
         "limit": limit,
         "source_summary": source_summary,
-        "topics": [topic.model_dump(mode="json") for topic in topics[:limit]],
+        "topics": [topic.model_dump(mode="json") for topic in limited_topics],
     }
 
 

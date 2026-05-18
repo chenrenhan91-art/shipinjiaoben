@@ -656,7 +656,7 @@ function renderHelperGuide() {
       <button class="helper-action" onclick="checkLocalHelperStatus(true)">检测助手</button>
       <a class="helper-action" href="${HELPER_GUIDE_URL}" target="_blank" rel="noopener noreferrer">打开完整文档</a>
     </div>
-    <div class="helper-panel-text">公开热榜通常可直接抓取；抖音/小红书作品级数据取决于本机采集工具、登录态和平台风控。</div>
+    <div class="helper-panel-text">公开热点源来自百度、头条、微博、腾讯、中国新闻网、第一财经、经济观察网、36氪等；抖音/小红书作品级数据取决于本机采集工具、登录态和平台风控。</div>
   </div>`;
 }
 
@@ -694,7 +694,7 @@ async function checkLocalHelperStatus(showPanel=false) {
       document.getElementById('outputContent').innerHTML = `<div class="helper-panel">
         <div>
           <div class="helper-panel-title">本机助手已连接</div>
-          <div class="helper-panel-text">当前端口：${escapeHtml(activeHelperBase)}。公开热榜可以直接抓取；抖音/小红书作品级源头需要本机登录态。</div>
+          <div class="helper-panel-text">当前端口：${escapeHtml(activeHelperBase)}。公开热点源可以直接抓取；抖音/小红书作品级源头需要本机登录态。</div>
         </div>
         <div class="helper-status-line">${escapeHtml(douyinReady)} · ${escapeHtml(cookieReady)}</div>
         <div class="helper-actions">
@@ -877,12 +877,13 @@ function renderOutput(topic, scripts, review, topics) {
   scripts = scripts || MOCK_SCRIPTS;
   review = review || MOCK_REVIEW;
   topics = topics || MOCK_TOPICS;
+  const safeTopic = String(topic || topics[0]?.topic || topics[0]?.title || '脚本');
   window._generatedScripts = scripts;
-  window._currentTopic = topic;
+  window._currentTopic = safeTopic;
 
   document.getElementById('outputPlaceholder').style.display = 'none';
   document.getElementById('outputContent').style.display = 'block';
-  document.getElementById('outputMeta').textContent = `选题：${topic.slice(0,16)}… | ${scripts.length}版本`;
+  document.getElementById('outputMeta').textContent = `选题：${safeTopic.slice(0,16)}… | ${scripts.length}版本`;
   document.getElementById('exportBtn').style.display = 'inline-flex';
 
   let html = '';
@@ -1227,6 +1228,58 @@ function displayTopicScore(topic) {
   return clampScore(Math.log10(heat + 1) * 18);
 }
 
+function firstTextValue(obj, keys) {
+  for (const key of keys) {
+    const value = obj?.[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number') return String(value);
+  }
+  return '';
+}
+
+function criteriaList(value) {
+  if (Array.isArray(value)) return value.map(i => String(i || '').trim()).filter(Boolean);
+  if (typeof value === 'string') return value.split(/[、,，;；\n]/).map(i => i.trim()).filter(Boolean);
+  return [];
+}
+
+function normalizeTopicDecision(raw, candidates) {
+  candidates = candidates || [];
+  let data = raw;
+  if (Array.isArray(raw)) {
+    data = raw
+      .filter(item => item && typeof item === 'object')
+      .sort((a, b) => Number(b.score ?? b.potential_score ?? b.评分 ?? b.分数 ?? -1) - Number(a.score ?? a.potential_score ?? a.评分 ?? a.分数 ?? -1))[0]
+      || raw[0];
+  }
+  if (typeof data === 'string') data = { topic: data };
+  if (data && typeof data === 'object') {
+    data = data.best || data.winner || data.result || data.selected || data.choice || data.data || data;
+  }
+  if (typeof data === 'string') data = { topic: data };
+  if (!data || typeof data !== 'object') data = {};
+
+  const fallback = candidates[0] || { topic: '热点选题', heat_score: 80 };
+  let topic = firstTextValue(data, ['topic', 'title', 'name', '选题', '标题', '最佳选题', 'topic_title']);
+  const rawIndex = Number(data.index ?? data.rank ?? data.no ?? data.序号 ?? data['候选序号']);
+  if (!topic && Number.isInteger(rawIndex) && candidates[rawIndex - 1]) topic = candidates[rawIndex - 1].topic;
+
+  const matched = candidates.find(t => t.topic === topic)
+    || candidates.find(t => topic && (t.topic.includes(topic) || topic.includes(t.topic)))
+    || fallback;
+  if (!topic) topic = matched.topic;
+
+  const score = Number(data.score ?? data.potential_score ?? data.评分 ?? data.分数 ?? matched.score ?? displayTopicScore(matched));
+  return {
+    topic,
+    score: Number.isFinite(score) ? clampScore(score) : displayTopicScore(matched),
+    criteria: criteriaList(data.criteria ?? data.matched_criteria ?? data.命中法则 ?? data.法则 ?? matched.criteria),
+    structure: data.structure || data.structure_type || data.结构 || matched.structure || '问题前置+层层解答',
+    source: matched.source,
+    url: matched.url,
+  };
+}
+
 function formatHeat(value) {
   const n = Number(value || 0);
   if (!n) return '热度 --';
@@ -1295,7 +1348,7 @@ function renderHotSources(topics, meta={}) {
     <div class="source-toolbar">
       <div>
         <div class="source-title-main">近期热点信息源</div>
-        <div class="source-stats">共 ${meta.total || topics.length} 条，已展示 ${filteredTopics.length} 条；头条/百度/微博等公开榜单无需登录，抖音/小红书作品级数据需本机登录态。</div>
+        <div class="source-stats">共 ${meta.total || topics.length} 条，已展示 ${filteredTopics.length} 条；仅展示当前可返回源头链接的公开热榜和权威资讯。</div>
       </div>
       <button class="btn btn-outline btn-sm" onclick="loadHotSources()">刷新</button>
     </div>
@@ -1365,7 +1418,7 @@ async function runRealPipeline(forceTopic) {
   } else {
   // Agent 1: 热点感知
   setNodeState('Hot', 'running');
-  addLog('HOT', 'tag-hot', manualTopic ? `使用手动选题：「${manualTopic}」` : (keyword ? `关键词「${keyword}」，搜索抖音/小红书/微博热点…` : '抓取抖音/小红书/微博等多源热点…'));
+  addLog('HOT', 'tag-hot', manualTopic ? `使用手动选题：「${manualTopic}」` : (keyword ? `关键词「${keyword}」，筛选权威新闻/公开热榜…` : '抓取权威新闻/公开热榜等多源热点…'));
   try {
     if (manualTopic) {
       topics = [{ topic: manualTopic, heat_score: 90 }];
@@ -1411,7 +1464,7 @@ async function runRealPipeline(forceTopic) {
   try {
     const sys2 = '你是财经短视频选题专家。对选题按爆款潜力评分（0-100），命中以下法则越多越好：信息差/揭秘、情绪共鸣点、权威解读、反认知观点、常见痛点、替弱势群体发声、说出大众心里话、借势、名人窥探、涨跌偏好、稀缺信息、娱乐性。输出纯JSON（不要代码块）：{"topic":"","score":90,"criteria":["法则1"]}'; // 已移除 structure：下游未使用且易触发 LLM 重复键
     const topicsStr = topics.map((t, i) => `${i+1}. ${t.topic}`).join('\n');
-    winner = await callLLMJson(sys2, `对以下选题评分并选出最佳：\n${topicsStr}`);
+    winner = normalizeTopicDecision(await callLLMJson(sys2, `对以下选题评分并选出最佳：\n${topicsStr}`), topics);
     addLog('JUDGE', 'tag-judge', `最佳选题 [${winner.score}分]：${winner.topic}`);
     addLog('JUDGE', 'tag-judge', `命中法则：${(winner.criteria||[]).join('、')}`);
     setNodeState('Judge', 'done');
@@ -1599,10 +1652,10 @@ async function runMockPipeline() {
   addLog('HOT', 'tag-hot', '开始抓取多平台热点…（演示模式，填写 AI 生成密钥启用真实生成）');
   await animateProgress('Hot', 1500);
   await sleep(200);
-  addLog('HOT', 'tag-hot', '抖音热榜 → 30 条');
-  addLog('HOT', 'tag-hot', '小红书热榜 → 25 条');
+  addLog('HOT', 'tag-hot', '百度热搜 → 30 条');
+  addLog('HOT', 'tag-hot', '中国新闻网/第一财经/36氪 → 45 条');
   addLog('HOT', 'tag-hot', '微博热搜 → 18 条');
-  addLog('HOT', 'tag-hot', '去重后热点共 <strong>61</strong> 条，送入选题决策…');
+  addLog('HOT', 'tag-hot', '去重后热点共 <strong>93</strong> 条，送入选题决策…');
   setNodeState('Hot', 'done');
   await sleep(300);
 
@@ -1673,7 +1726,7 @@ function exportScripts() {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 生成中…'; }
   const restoreBtn = () => { if (btn) { btn.disabled = false; btn.textContent = '↓ 导出阅读版'; } };
   const scripts = window._generatedScripts || MOCK_SCRIPTS;
-  const topic   = window._currentTopic || '脚本';
+  const topic   = String(window._currentTopic || '脚本');
   const dateStr = new Date().toLocaleString('zh-CN');
   const fname   = `脚本_${topic.slice(0, 10)}_${new Date().toISOString().slice(0, 10)}.html`;
 
