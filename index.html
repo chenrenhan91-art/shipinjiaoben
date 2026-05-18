@@ -1361,10 +1361,11 @@ function renderPlatformSourceSection(platform={}) {
 
   const douyinOk = String(status.douyin || status.douyin_detail || '').includes('ok') || items.some(item => item.platform === 'douyin');
   const xhsOk = String(status.xiaohongshu_detail || '').includes('ok') || items.some(item => item.platform === 'xiaohongshu');
+  const keywordNoMatch = String(status.douyin_hot || '').startsWith('empty:keyword_no_match');
   const douyinStatus = status.douyin === 'ok:hot_list' ? '热榜已返回' : status.douyin;
   const statusHtml = `
     <div class="platform-status">
-      <span class="platform-pill ${douyinOk ? 'ok' : 'warn'}">抖音：${douyinOk ? `已抓到 ${items.filter(i => i.platform === 'douyin').length} 条` : '等待作品源或登录态'}</span>
+      <span class="platform-pill ${douyinOk ? 'ok' : 'warn'}">抖音：${douyinOk ? `已抓到 ${items.filter(i => i.platform === 'douyin').length} 条` : (keywordNoMatch ? '当前关键词无匹配热榜' : '等待作品源或登录态')}</span>
       ${douyinOnly ? '' : `<span class="platform-pill ${xhsOk ? 'ok' : 'warn'}">小红书：${xhsOk ? `已抓到 ${items.filter(i => i.platform === 'xiaohongshu').length} 条` : '当前提供搜索/链接采集入口'}</span>`}
       ${douyinStatus ? `<span class="platform-pill">抖音接口：${escapeHtml(douyinStatus)}</span>` : ''}
       ${status.douyin_hot === 'ok' ? '<span class="platform-pill ok">抖音热榜：已接入</span>' : ''}
@@ -1404,7 +1405,7 @@ function renderPlatformSourceSection(platform={}) {
   </div>` : '';
   const body = platform.loading
     ? '<div class="source-empty"><span class="spinner"></span> 正在通过本机助手抓取抖音/小红书平台源…</div>'
-    : (cards ? `<div class="source-grid">${cards}</div>` : `<div class="source-empty">暂未抓到作品卡片。可先打开平台搜索页查看源头，或确认平台登录态后刷新。</div>`);
+    : (cards ? `<div class="source-grid">${cards}</div>` : `<div class="source-empty">${keywordNoMatch ? '当前关键词没有匹配到抖音热榜内容。可以换一个更具体或更宽泛的关键词再抓取。' : '暂未抓到作品卡片。可先打开平台搜索页查看源头，或确认平台登录态后刷新。'}</div>`);
 
   return `<div class="source-section">
     <div class="source-section-head">
@@ -1445,6 +1446,30 @@ function renderDouyinPlatformSources(platform={}) {
   document.getElementById('exportBtn').style.display = 'none';
   document.getElementById('outputMeta').textContent = '抖音平台热点源';
   document.getElementById('outputContent').innerHTML = `<div>${renderPlatformSourceSection({ ...platform, focus: 'douyin' })}</div>`;
+}
+
+function renderDouyinKeywordPrompt(message='') {
+  const preset = escapeHtml(document.getElementById('cfgKeyword').value.trim() || document.getElementById('cfgTopic').value.trim().slice(0, 18));
+  const tip = message ? `<div class="helper-status-line" style="color:#fbbf24">${escapeHtml(message)}</div>` : '';
+  document.getElementById('outputPlaceholder').style.display = 'none';
+  document.getElementById('outputContent').style.display = 'block';
+  document.getElementById('exportBtn').style.display = 'none';
+  document.getElementById('outputMeta').textContent = '填写抖音热点关键词';
+  document.getElementById('outputContent').innerHTML = `<div class="source-section">
+    <div class="helper-panel">
+      <div>
+        <div class="helper-panel-title">填写抖音热点关键词</div>
+        <div class="helper-panel-text">输入你想收束的方向，例如：财经热点、AI、职场、房产、美妆。系统会按关键词组过滤抖音热榜。</div>
+      </div>
+      ${tip}
+      <input class="config-input" id="douyinKeywordInput" value="${preset}" placeholder="如：财经热点、AI、职场、房产" onkeydown="if(event.key==='Enter') runDouyinHotSearch()" />
+      <div class="helper-actions">
+        <button class="helper-action primary" onclick="runDouyinHotSearch()">抓取抖音热点</button>
+        <button class="helper-action" onclick="renderHelperGuide()">使用教程</button>
+      </div>
+    </div>
+  </div>`;
+  setTimeout(() => document.getElementById('douyinKeywordInput')?.focus(), 0);
 }
 
 function renderHotSources(topics, meta={}) {
@@ -1623,9 +1648,18 @@ async function loadPublicHotSources() {
 }
 
 async function loadDouyinHotSources() {
-  const keyword = document.getElementById('cfgKeyword').value.trim()
-    || document.getElementById('cfgTopic').value.trim().slice(0, 18)
-    || '财经热点';
+  renderDouyinKeywordPrompt();
+  addLog('HOT', 'tag-hot', '已打开抖音热点关键词面板，等待输入后抓取…');
+}
+
+async function runDouyinHotSearch() {
+  const keyword = (document.getElementById('douyinKeywordInput')?.value || '').trim();
+  if (!keyword) {
+    renderDouyinKeywordPrompt('请先填写关键词，再抓取抖音热点源。');
+    addLog('HOT', 'tag-hot', '<span style="color:#fbbf24">请先填写抖音热点关键词。</span>');
+    return;
+  }
+  document.getElementById('cfgKeyword').value = keyword;
   addLog('HOT', 'tag-hot', `准备抓取抖音平台热点源（关键词：「${escapeHtml(keyword)}」）…`);
 
   const status = await checkLocalHelperStatus(false);

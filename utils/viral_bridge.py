@@ -27,6 +27,13 @@ DOUYIN_HOT_ENDPOINTS = [
     "https://www.douyin.com/aweme/v1/web/hot/search/list/",
     "https://www.iesdouyin.com/web/api/v2/hotsearch/billboard/word/",
 ]
+DOUYIN_KEYWORD_GROUPS = {
+    "财经热点": ["财经", "经济", "股市", "A股", "港股", "美股", "基金", "银行", "券商", "保险", "房价", "楼市", "地产", "消费", "企业", "裁员", "招聘", "薪资", "美联储", "人民币", "美元", "关税", "降息", "加息", "通胀", "油价", "黄金"],
+    "AI": ["AI", "人工智能", "大模型", "机器人", "芯片", "算力", "OpenAI", "英伟达", "DeepSeek", "智能体", "自动驾驶"],
+    "职场": ["职场", "裁员", "招聘", "薪资", "加班", "就业", "考公", "副业", "离职", "公司", "老板"],
+    "房产": ["房产", "楼市", "房价", "买房", "卖房", "租房", "房贷", "地产", "小区", "物业"],
+    "美妆": ["美妆", "护肤", "口红", "面膜", "防晒", "彩妆", "穿搭", "变美", "医美"],
+}
 URL_RE = re.compile(r"https?://[^\s'\"<>，。；、）)】」]+", re.I)
 
 
@@ -267,12 +274,40 @@ def _normalize_hot_word(raw: dict[str, Any], source: str, position: int) -> dict
     }
 
 
-def _keyword_matches_hot_word(item: dict[str, Any], keyword: str) -> bool:
+def _keyword_terms(keyword: str) -> list[str]:
     keyword = clean_text(keyword)
+    if not keyword:
+        return []
+    terms = [keyword]
+    keyword_lower = keyword.lower()
+    for group, values in DOUYIN_KEYWORD_GROUPS.items():
+        values_lower = [value.lower() for value in values]
+        if keyword == group or keyword_lower == group.lower() or keyword_lower in values_lower:
+            terms.extend(values)
+        elif any(value in keyword or value.lower() in keyword_lower for value in values):
+            terms.extend(values)
+    return [term for term in dict.fromkeys(clean_text(term) for term in terms) if term]
+
+
+def _hot_word_relevance(item: dict[str, Any], keyword: str) -> int:
     title = clean_text(str(item.get("title") or ""))
-    if not keyword or not title:
-        return False
-    return keyword in title or title in keyword
+    if not title:
+        return 0
+    title_lower = title.lower()
+    score = 0
+    for term in _keyword_terms(keyword):
+        term_lower = term.lower()
+        if term == title:
+            score += 40
+        elif term in title or term_lower in title_lower:
+            score += 20
+        elif title in term:
+            score += 8
+    return score
+
+
+def _keyword_matches_hot_word(item: dict[str, Any], keyword: str) -> bool:
+    return _hot_word_relevance(item, keyword) > 0
 
 
 async def _fetch_douyin_hot_words(keyword: str, limit: int, status: dict[str, Any]) -> list[dict[str, Any]]:
@@ -305,12 +340,23 @@ async def _fetch_douyin_hot_words(keyword: str, limit: int, status: dict[str, An
             if (item := _normalize_hot_word(raw, source_name, idx))
         ]
         items = _dedupe(items, max(limit * 3, limit))
-        matched = [item for item in items if _keyword_matches_hot_word(item, keyword)]
-        result = _dedupe(matched or items, limit)
+        if clean_text(keyword):
+            matched = [item for item in items if _keyword_matches_hot_word(item, keyword)]
+            matched.sort(key=lambda item: (_hot_word_relevance(item, keyword), item.get("hot_value", 0)), reverse=True)
+            result = _dedupe(matched, limit)
+        else:
+            result = _dedupe(items, limit)
         if result:
             status["douyin_hot"] = "ok"
             status["douyin_hot_source"] = endpoint
+            if clean_text(keyword):
+                status["douyin_hot_filter"] = "keyword_matched"
             return result
+
+        if clean_text(keyword):
+            status["douyin_hot"] = "empty:keyword_no_match"
+            status["douyin_hot_source"] = endpoint
+            return []
 
     status["douyin_hot"] = "unavailable" if errors else "empty"
     if errors:
