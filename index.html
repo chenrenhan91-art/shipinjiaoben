@@ -427,11 +427,12 @@ select.config-input option { background: var(--bg3); }
 
     <div class="sidebar-section">
       <div class="sidebar-title">热点源</div>
-      <button class="btn btn-outline" style="width:100%;margin-bottom:8px" onclick="loadHotSources()">↗ 抓取热点源</button>
+      <button class="btn btn-outline" style="width:100%;margin-bottom:8px" onclick="loadPublicHotSources()">↗ 公开热点源（免平台登录）</button>
+      <button class="btn btn-outline" id="douyinHotBtn" style="width:100%;margin-bottom:8px" onclick="loadDouyinHotSources()">抖音热点源（需助手）</button>
       <button class="btn btn-outline" style="width:100%;margin-bottom:8px" onclick="checkLocalHelperStatus(true)">检测本机助手</button>
       <a class="btn btn-outline" style="display:block;width:100%;text-align:center;text-decoration:none;margin-bottom:8px" href="scripts/shipinjiaoben_collector_installer.zip" download>下载 macOS 助手</a>
       <button class="btn btn-outline" style="width:100%;margin-bottom:8px" onclick="renderHelperGuide()">使用教程</button>
-      <div id="hotSourceHint" style="font-size:11px;color:var(--muted);line-height:1.6">普通用户安装助手后，网页只调用本机采集服务抓取热点源。</div>
+      <div id="hotSourceHint" style="font-size:11px;color:var(--muted);line-height:1.6">抖音热点源需要本机助手连接；未连接时会显示入口但无法抓取。</div>
     </div>
 
   </div>
@@ -563,6 +564,8 @@ const HELPER_INSTALLER_URL = new URL('scripts/shipinjiaoben_collector_installer.
 const HELPER_GUIDE_URL = new URL('docs/helper-guide.md', window.location.href).href;
 const HELPER_INSTALL_COMMAND = `cd ~/Downloads && curl -fL "${HELPER_INSTALLER_URL.replace(/"/g, '\\"')}" -o shipinjiaoben_collector_installer.zip && rm -rf shipinjiaoben_collector_installer && mkdir shipinjiaoben_collector_installer && unzip -o shipinjiaoben_collector_installer.zip -d shipinjiaoben_collector_installer && open shipinjiaoben_collector_installer/Collector_Helper_Installer.app`;
 let activeHelperBase = '';
+let helperConnected = false;
+let lastHelperStatus = null;
 
 // ═══════════════════════════════════
 // 模式切换
@@ -626,7 +629,7 @@ function helperSetupHtml(message='') {
   return `<div class="helper-panel">
     <div>
       <div class="helper-panel-title">需要本机采集助手</div>
-      <div class="helper-panel-text">这个网页不连接你的云端后端。用户安装助手后，页面只请求自己电脑上的 127.0.0.1 服务来抓取热点源和源头素材。</div>
+      <div class="helper-panel-text">这个网页不连接你的云端后端。抖音平台热点源需要本机助手连接后才能抓取；未连接时会显示入口但不会执行采集。</div>
     </div>
     ${detail}
     <div class="helper-actions">
@@ -635,8 +638,25 @@ function helperSetupHtml(message='') {
       <button class="helper-action" onclick="checkLocalHelperStatus(true)">检测助手</button>
       <button class="helper-action" onclick="renderHelperGuide()">使用教程</button>
     </div>
-    <div class="helper-panel-text">下载后解压并打开 Collector_Helper_Installer.app。安装完成后回到网页点击“检测助手”或“抓取热点源”。抖音/小红书作品级素材需要用户在本机完成平台登录。</div>
+    <div class="helper-panel-text">下载后解压并打开 Collector_Helper_Installer.app。安装完成后回到网页点击“检测助手”或“抖音热点源”。抖音作品级素材需要用户在本机完成平台登录。</div>
   </div>`;
+}
+
+function updateDouyinHotButton(status=null) {
+  const btn = document.getElementById('douyinHotBtn');
+  if (!btn) return;
+  const connected = !!(status?.ok || helperConnected);
+  const douyinReady = !!status?.douyin_tool?.ok;
+  if (!connected) {
+    btn.textContent = '抖音热点源（未连接助手）';
+    btn.title = '请先安装并检测本机助手，未连接时无法抓取抖音平台热点源。';
+  } else if (!douyinReady) {
+    btn.textContent = '抖音热点源（助手已连，采集未就绪）';
+    btn.title = '本机助手已连接，但抖音采集服务尚未就绪。';
+  } else {
+    btn.textContent = '抖音热点源（助手已连接）';
+    btn.title = '点击通过本机助手抓取抖音平台热点源。';
+  }
 }
 
 function renderHelperSetupPanel(message='') {
@@ -655,13 +675,13 @@ function renderHelperGuide() {
   document.getElementById('outputContent').innerHTML = `<div class="helper-panel">
     <div>
       <div class="helper-panel-title">本机采集助手使用教程</div>
-      <div class="helper-panel-text">按下面步骤完成安装后，网页会调用用户自己电脑上的本机助手抓取热点源。</div>
+      <div class="helper-panel-text">按下面步骤完成安装后，网页会调用用户自己电脑上的本机助手抓取抖音平台热点源。</div>
     </div>
     <div class="helper-steps">
       <div class="helper-step"><span class="helper-step-num">1</span><div><div class="helper-step-title">下载并解压助手</div><div class="helper-step-text">点击「下载 macOS 助手」，解压 shipinjiaoben_collector_installer.zip。</div></div></div>
       <div class="helper-step"><span class="helper-step-num">2</span><div><div class="helper-step-title">打开安装器</div><div class="helper-step-text">打开 Collector_Helper_Installer.app。如果 macOS 拦截，在「系统设置 > 隐私与安全性」里允许打开。</div></div></div>
       <div class="helper-step"><span class="helper-step-num">3</span><div><div class="helper-step-title">检测本机助手</div><div class="helper-step-text">安装完成后回到网页，点击「检测本机助手」。连接成功后会显示助手端口和登录态状态。</div></div></div>
-      <div class="helper-step"><span class="helper-step-num">4</span><div><div class="helper-step-title">抓取热点源</div><div class="helper-step-text">点击「抓取热点源」，再用平台按钮筛选来源，或点击「打开源头」查看原始页面。</div></div></div>
+      <div class="helper-step"><span class="helper-step-num">4</span><div><div class="helper-step-title">抓取抖音热点源</div><div class="helper-step-text">点击「抖音热点源（需助手）」，查看本机助手是否已连接、抖音采集服务是否可用，以及抓到的作品卡片。</div></div></div>
       <div class="helper-step"><span class="helper-step-num">5</span><div><div class="helper-step-title">配置作品级采集</div><div class="helper-step-text">需要抖音/小红书作品详情、点赞、评论、文案时，先在本机完成平台登录态配置。</div></div></div>
     </div>
     <div class="helper-actions">
@@ -695,9 +715,12 @@ async function copyHelperInstallCommand() {
 async function checkLocalHelperStatus(showPanel=false) {
   try {
     const status = await callHelper('/api/helper/status', {}, 8000);
+    helperConnected = true;
+    lastHelperStatus = status;
+    updateDouyinHotButton(status);
     const douyinReady = status.douyin_tool?.ok ? '抖音采集服务已连接' : '抖音采集服务未启动';
     const cookieReady = status.douyin_cookie?.configured ? '登录态已配置' : '登录态未配置';
-    document.getElementById('hotSourceHint').textContent = `助手已连接：${activeHelperBase}，${douyinReady}，${cookieReady}`;
+    document.getElementById('hotSourceHint').textContent = `助手已连接：${activeHelperBase}，${douyinReady}，${cookieReady}。抖音热点源可以尝试抓取。`;
     document.getElementById('badgeLive').textContent = '● 助手已连接';
     addLog('SYS', 'tag-sys', `本机助手已连接：${activeHelperBase}`);
     if (showPanel) {
@@ -708,11 +731,12 @@ async function checkLocalHelperStatus(showPanel=false) {
       document.getElementById('outputContent').innerHTML = `<div class="helper-panel">
         <div>
           <div class="helper-panel-title">本机助手已连接</div>
-          <div class="helper-panel-text">当前端口：${escapeHtml(activeHelperBase)}。公开热点源可以直接抓取；抖音/小红书作品级源头需要本机登录态。</div>
+          <div class="helper-panel-text">当前端口：${escapeHtml(activeHelperBase)}。抖音平台热点源需要本机助手和抖音登录态；公开热点源可从左侧单独查看。</div>
         </div>
         <div class="helper-status-line">${escapeHtml(douyinReady)} · ${escapeHtml(cookieReady)}</div>
         <div class="helper-actions">
-          <button class="helper-action primary" onclick="loadHotSources()">抓取热点源</button>
+          <button class="helper-action primary" onclick="loadDouyinHotSources()">抓取抖音热点源</button>
+          <button class="helper-action" onclick="loadPublicHotSources()">查看公开热点源</button>
           <button class="helper-action" onclick="openDouyinLoginFromHelper()">打开抖音登录</button>
           <button class="helper-action" onclick="renderHelperGuide()">使用教程</button>
         </div>
@@ -720,7 +744,10 @@ async function checkLocalHelperStatus(showPanel=false) {
     }
     return status;
   } catch(e) {
-    document.getElementById('hotSourceHint').textContent = '未检测到本机助手，请先下载安装。';
+    helperConnected = false;
+    lastHelperStatus = null;
+    updateDouyinHotButton(null);
+    document.getElementById('hotSourceHint').textContent = '未连接本机助手：抖音热点源入口会显示，但无法抓取。';
     document.getElementById('badgeLive').textContent = '● 等待助手';
     if (showPanel) renderHelperSetupPanel(e.message);
     return null;
@@ -1324,9 +1351,13 @@ function formatPlatformStats(item) {
 
 function renderPlatformSourceSection(platform={}) {
   const keyword = escapeHtml(platform.keyword || '财经热点');
-  const items = (platform.items || []).filter(item => item?.url || item?.title);
+  const focus = platform.focus || 'all';
+  const douyinOnly = focus === 'douyin';
+  const items = (platform.items || [])
+    .filter(item => item?.url || item?.title)
+    .filter(item => !douyinOnly || item.platform === 'douyin');
   const status = platform.status || {};
-  const searchLinks = platform.searchLinks || [];
+  const searchLinks = (platform.searchLinks || []).filter(link => !douyinOnly || String(link.label || '').includes('抖音'));
   window._platformSources = items;
 
   const douyinOk = String(status.douyin || status.douyin_detail || '').includes('ok') || items.some(item => item.platform === 'douyin');
@@ -1334,9 +1365,9 @@ function renderPlatformSourceSection(platform={}) {
   const statusHtml = `
     <div class="platform-status">
       <span class="platform-pill ${douyinOk ? 'ok' : 'warn'}">抖音：${douyinOk ? `已抓到 ${items.filter(i => i.platform === 'douyin').length} 条` : '等待作品源或登录态'}</span>
-      <span class="platform-pill ${xhsOk ? 'ok' : 'warn'}">小红书：${xhsOk ? `已抓到 ${items.filter(i => i.platform === 'xiaohongshu').length} 条` : '当前提供搜索/链接采集入口'}</span>
+      ${douyinOnly ? '' : `<span class="platform-pill ${xhsOk ? 'ok' : 'warn'}">小红书：${xhsOk ? `已抓到 ${items.filter(i => i.platform === 'xiaohongshu').length} 条` : '当前提供搜索/链接采集入口'}</span>`}
       ${status.douyin ? `<span class="platform-pill">抖音接口：${escapeHtml(status.douyin)}</span>` : ''}
-      ${status.xiaohongshu_detail ? `<span class="platform-pill">小红书接口：${escapeHtml(status.xiaohongshu_detail)}</span>` : ''}
+      ${!douyinOnly && status.xiaohongshu_detail ? `<span class="platform-pill">小红书接口：${escapeHtml(status.xiaohongshu_detail)}</span>` : ''}
       ${status.error ? `<span class="platform-pill warn">采集错误：${escapeHtml(status.error)}</span>` : ''}
     </div>`;
 
@@ -1376,8 +1407,8 @@ function renderPlatformSourceSection(platform={}) {
   return `<div class="source-section">
     <div class="source-section-head">
       <div>
-        <div class="source-section-title">本机平台采集源</div>
-        <div class="source-section-desc">抖音/小红书需要本机助手、平台登录态和平台风控通过；当前关键词：${keyword}</div>
+        <div class="source-section-title">${douyinOnly ? '抖音平台热点源' : '本机平台采集源'}</div>
+        <div class="source-section-desc">${douyinOnly ? '抖音热点源需要本机助手、抖音采集服务和登录态；未连接助手时无法抓取。' : '抖音/小红书需要本机助手、平台登录态和平台风控通过'} 当前关键词：${keyword}</div>
       </div>
     </div>
     ${statusHtml}
@@ -1386,8 +1417,39 @@ function renderPlatformSourceSection(platform={}) {
   </div>`;
 }
 
+function renderDouyinHelperBlocked(message='') {
+  const detail = escapeHtml(message || '未检测到本机助手连接，无法抓取抖音平台热点源。');
+  document.getElementById('outputPlaceholder').style.display = 'none';
+  document.getElementById('outputContent').style.display = 'block';
+  document.getElementById('exportBtn').style.display = 'none';
+  document.getElementById('outputMeta').textContent = '抖音热点源不可抓取';
+  document.getElementById('outputContent').innerHTML = `<div class="source-section">
+    <div class="helper-panel">
+      <div>
+        <div class="helper-panel-title">抖音平台热点源需要本机助手</div>
+        <div class="helper-panel-text">抖音平台内容不是公开免登录源，必须先让网页连接到用户电脑上的本机助手。当前状态：${detail}</div>
+      </div>
+      <div class="helper-actions">
+        <button class="helper-action primary" onclick="checkLocalHelperStatus(true)">检测本机助手</button>
+        <a class="helper-action" href="${HELPER_INSTALLER_URL}" download>下载 macOS 助手</a>
+        <button class="helper-action" onclick="renderHelperGuide()">使用教程</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderDouyinPlatformSources(platform={}) {
+  document.getElementById('outputPlaceholder').style.display = 'none';
+  document.getElementById('outputContent').style.display = 'block';
+  document.getElementById('exportBtn').style.display = 'none';
+  document.getElementById('outputMeta').textContent = '抖音平台热点源';
+  document.getElementById('outputContent').innerHTML = `<div>${renderPlatformSourceSection({ ...platform, focus: 'douyin' })}</div>`;
+}
+
 function renderHotSources(topics, meta={}) {
   topics = (topics || []).filter(item => item?.url);
+  const showPlatform = meta.showPlatform !== false;
+  const refreshAction = meta.refreshAction === 'loadPublicHotSources()' ? 'loadPublicHotSources()' : 'loadHotSources()';
   const summary = topics.reduce((acc, item) => {
     const key = String(item.source || '未知来源').split('/')[0];
     acc[key] = (acc[key] || 0) + 1;
@@ -1442,15 +1504,15 @@ function renderHotSources(topics, meta={}) {
     <div class="source-section">
       <div class="source-toolbar">
         <div>
-          <div class="source-title-main">免助手公开热点源</div>
+          <div class="source-title-main">公开热点信息源</div>
           <div class="source-stats">可显示 ${topics.length} 条，当前展示 ${filteredTopics.length} 条；百度、头条、微博、腾讯、36氪等公开源无需平台登录。</div>
         </div>
-        <button class="btn btn-outline btn-sm" onclick="loadHotSources()">刷新</button>
+        <button class="btn btn-outline btn-sm" onclick="${refreshAction}">刷新</button>
       </div>
       ${topics.length ? `<div class="source-chips">${allChip}${chips}</div>` : ''}
-      ${filteredTopics.length ? `<div class="source-grid">${cards}</div>` : `<div class="source-empty">暂未抓到免助手公开源。可以稍后重试，或直接查看下方本机平台采集源。</div>`}
+      ${filteredTopics.length ? `<div class="source-grid">${cards}</div>` : `<div class="source-empty">暂未抓到公开热点源。可以稍后重试，或查看抖音热点源入口。</div>`}
     </div>
-    ${renderPlatformSourceSection(meta.platform || {})}
+    ${showPlatform ? renderPlatformSourceSection(meta.platform || {}) : ''}
   </div>`;
 }
 
@@ -1538,6 +1600,72 @@ async function loadHotSources() {
     const hint = e.message.includes('HTTP 404') ? '检测到旧版本机助手，请重新下载安装最新版。' : `本机助手未连接或接口不可用：${e.message}`;
     renderHelperSetupPanel(hint);
     addLog('HOT', 'tag-hot', `<span style="color:#f87171">热点源抓取失败：${escapeHtml(e.message)}</span>`);
+  }
+}
+
+async function loadPublicHotSources() {
+  document.getElementById('outputPlaceholder').style.display = 'none';
+  document.getElementById('outputContent').style.display = 'block';
+  document.getElementById('outputMeta').textContent = '公开热点源抓取中…';
+  document.getElementById('exportBtn').style.display = 'none';
+  document.getElementById('outputContent').innerHTML = '<div class="source-empty"><span class="spinner"></span> 正在抓取公开热点信息源…</div>';
+  addLog('HOT', 'tag-hot', '开始抓取公开热点信息源…');
+  try {
+    const data = await fetchHotTopics(80);
+    renderHotSources(data.topics || [], { ...data, showPlatform: false, refreshAction: 'loadPublicHotSources()' });
+    addLog('HOT', 'tag-hot', `公开热点源抓取完成：${(data.topics || []).length} 条，可点击跳转源头 ✓`);
+  } catch(e) {
+    document.getElementById('outputMeta').textContent = '公开热点源抓取失败';
+    renderHelperSetupPanel(`公开热点源接口暂不可用：${e.message}`);
+    addLog('HOT', 'tag-hot', `<span style="color:#f87171">公开热点源抓取失败：${escapeHtml(e.message)}</span>`);
+  }
+}
+
+async function loadDouyinHotSources() {
+  const keyword = document.getElementById('cfgKeyword').value.trim()
+    || document.getElementById('cfgTopic').value.trim().slice(0, 18)
+    || '财经热点';
+  addLog('HOT', 'tag-hot', `准备抓取抖音平台热点源（关键词：「${escapeHtml(keyword)}」）…`);
+
+  const status = await checkLocalHelperStatus(false);
+  if (!status) {
+    renderDouyinHelperBlocked('本机助手未连接');
+    addLog('HOT', 'tag-hot', '<span style="color:#fbbf24">抖音热点源需要本机助手，当前无法抓取。</span>');
+    return;
+  }
+
+  const douyinReady = !!status.douyin_tool?.ok;
+  if (!douyinReady) {
+    renderDouyinHelperBlocked('本机助手已连接，但抖音采集服务未就绪');
+    addLog('HOT', 'tag-hot', '<span style="color:#fbbf24">抖音采集服务未就绪，无法抓取抖音热点源。</span>');
+    return;
+  }
+
+  document.getElementById('outputMeta').textContent = '抖音热点源抓取中…';
+  renderDouyinPlatformSources({ keyword, loading: true, items: [], status: { douyin: 'starting' }, searchLinks: [] });
+  try {
+    const bridge = await fetchViralBridge(keyword, '');
+    const items = (bridge.items || []).filter(item => item.platform === 'douyin');
+    const searchLinks = (bridge.search_links || []).filter(link => String(link.label || '').includes('抖音'));
+    renderDouyinPlatformSources({
+      keyword,
+      loading: false,
+      items,
+      status: bridge.status || {},
+      searchLinks,
+    });
+    addLog('HOT', 'tag-hot', items.length
+      ? `抖音平台热点源抓取完成：${items.length} 条作品卡片 ✓`
+      : '抖音平台暂未抓到作品卡片，已显示接口状态和搜索入口');
+  } catch(e) {
+    renderDouyinPlatformSources({
+      keyword,
+      loading: false,
+      items: [],
+      status: { error: e.message },
+      searchLinks: [{ label: '抖音关键词搜索', url: `https://www.douyin.com/search/${encodeURIComponent(keyword)}` }],
+    });
+    addLog('HOT', 'tag-hot', `<span style="color:#f87171">抖音平台热点源抓取失败：${escapeHtml(e.message)}</span>`);
   }
 }
 
