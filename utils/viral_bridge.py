@@ -289,7 +289,7 @@ async def _search_douyin(keyword: str, limit: int, status: dict[str, Any]) -> li
         "source": False,
     }
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(trust_env=False) as client:
             data = await _post_json(client, url, payload, config.douk_api_token)
         items = [i for d in _walk_dicts(data) if (i := _normalize_item(d, "douyin", "TikTokDownloader"))]
         threshold = config.douyin_like_threshold
@@ -311,7 +311,7 @@ async def _detail_douyin_by_id(detail_id: str, status: dict[str, Any]) -> dict[s
     url = f"{config.douk_api_base.rstrip('/')}/douyin/detail"
     payload = {"detail_id": detail_id, "source": False}
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(trust_env=False) as client:
             data = await _post_json(client, url, payload, config.douk_api_token)
         for raw in _walk_dicts(data):
             item = _normalize_item(raw, "douyin", "TikTokDownloader/detail")
@@ -330,7 +330,7 @@ async def _comments_douyin(detail_id: str, status: dict[str, Any]) -> list[str]:
     url = f"{config.douk_api_base.rstrip('/')}/douyin/comment"
     payload = {"detail_id": detail_id, "pages": 1, "cursor": 0, "count": 20, "source": False}
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(trust_env=False) as client:
             data = await _post_json(client, url, payload, config.douk_api_token)
         comments = _extract_comments(data)
         if comments:
@@ -371,7 +371,7 @@ async def check_douyin_status(keyword: str = "测试") -> dict[str, Any]:
         "token_configured": bool(config.douk_api_token),
     }
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(trust_env=False) as client:
             resp = await client.get(f"{config.douk_api_base.rstrip('/')}/docs", timeout=5)
         status["douyin_api"] = "ok" if resp.status_code < 500 else f"HTTP {resp.status_code}"
     except httpx.RequestError as exc:
@@ -381,7 +381,7 @@ async def check_douyin_status(keyword: str = "测试") -> dict[str, Any]:
     probe: dict[str, Any] = {}
     items = await _search_douyin(keyword, 1, probe)
     status["search_probe"] = probe.get("douyin", "empty")
-    status["login_hint"] = "搜索探测成功" if items else "若搜索为空/403/502，请在抖音官方页面登录并确认 DouK API Token 配置"
+    status["login_hint"] = "搜索探测成功" if items else "若搜索为空/403/500/502，请重新导入登录态；若仍为 500，通常是 DouK 搜索接口拿到空结果后内部报错"
     return status
 
 
