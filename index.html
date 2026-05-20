@@ -308,6 +308,7 @@ select.config-input option { background: var(--bg3); }
 .source-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .source-platform { font-size: 11px; color: #a78bfa; font-weight: 700; }
 .source-heat { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.source-card-stats { font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: -2px; }
 .source-card-title {
   color: var(--text); font-size: 13px; font-weight: 700; line-height: 1.55;
   text-decoration: none; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
@@ -1667,9 +1668,9 @@ function renderPlatformSourceSection(platform={}) {
     return `<div class="source-card">
       <div class="source-card-head">
         <span class="source-platform">${source}</span>
-        <span class="source-heat">${stats}</span>
       </div>
       ${titleNode}
+      ${stats ? `<div class="source-card-stats">${stats}</div>` : ''}
       <div class="source-summary">${summary}</div>
       <div class="source-actions">
         ${openLink}
