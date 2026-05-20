@@ -535,6 +535,7 @@ async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, s
     searched_terms: list[str] = []
     term_states: dict[str, str] = {}
     items: list[dict[str, Any]] = []
+    best_effort_items: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     filtered_low_heat = 0
     filtered_old = 0
@@ -561,7 +562,8 @@ async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, s
             if not raw_id or raw_id in seen_ids or detail_checks >= max_detail_checks:
                 continue
             candidate_timestamp = _normalize_timestamp(candidate.get("publish_timestamp"))
-            if candidate_timestamp and not _timestamp_is_recent(candidate_timestamp):
+            # 预筛：DuckDuckGo 缓存时间戳可能有延迟，放宽到 60 天，靠 detail 接口拿到真实时间再二次过滤
+            if candidate_timestamp and (datetime.now(timezone.utc) - datetime.fromtimestamp(candidate_timestamp, tz=timezone.utc)) > timedelta(days=60):
                 filtered_old += 1
                 continue
             seen_ids.add(raw_id)
@@ -599,6 +601,10 @@ async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, s
                     pending_terms.append(tag)
             if item.get("core_score") and _video_item_passes_constraints(item):
                 items.append(item)
+            elif item.get("core_score") and _video_item_passes_heat(item):
+                # 有热度但可能超期，作为最佳兜底保留
+                best_effort_items.append(item)
+                filtered_old += 1
             elif item.get("core_score"):
                 if not _video_item_passes_heat(item):
                     filtered_low_heat += 1
@@ -610,9 +616,14 @@ async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, s
 
     items.sort(key=lambda item: (item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
     result = _dedupe(items, limit)
+    if not result and best_effort_items:
+        best_effort_items.sort(key=lambda item: (item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
+        result = _dedupe(best_effort_items, limit)
+        status["douyin_index_fallback"] = "ok:best_effort"
     status["douyin_index_term_status"] = term_states
     status["douyin_index_terms_used"] = searched_terms
-    status["douyin_index_fallback"] = "ok" if result else "empty"
+    if "douyin_index_fallback" not in status:
+        status["douyin_index_fallback"] = "ok" if result else "empty"
     status["douyin_video_min_likes"] = DOUYIN_MIN_VIDEO_LIKES
     status["douyin_video_max_age_days"] = DOUYIN_MAX_VIDEO_AGE_DAYS
     status["douyin_video_filtered_low_heat"] = filtered_low_heat
@@ -626,6 +637,7 @@ async def _search_douyin_videos_by_terms(keyword: str, limit: int, status: dict[
         status["douyin_video_fallback"] = "empty:no_keyword"
         return []
     found: list[dict[str, Any]] = []
+    best_effort_direct: list[dict[str, Any]] = []
     term_states: dict[str, str] = {}
     direct_search_status = str(status.get("douyin") or "")
     direct_terms = [] if direct_search_status.startswith("unavailable") else terms[:DOUYIN_DIRECT_SEARCH_MAX_TERMS]
@@ -642,7 +654,11 @@ async def _search_douyin_videos_by_terms(keyword: str, limit: int, status: dict[
             item["source_type"] = "video_fallback"
             item["search_term"] = term
             item["core_score"] = _core_video_score(item)
-        found.extend([item for item in term_items if _video_item_passes_constraints(item)])
+        for item in term_items:
+            if _video_item_passes_constraints(item):
+                found.append(item)
+            elif _video_item_passes_heat(item):
+                best_effort_direct.append(item)
         if len(_dedupe(found, limit * 2)) >= limit * 2:
             break
     unique = _dedupe(found, limit * 3)
@@ -651,9 +667,14 @@ async def _search_douyin_videos_by_terms(keyword: str, limit: int, status: dict[
     if len(result) < limit:
         indexed_items = await _search_indexed_douyin_videos_by_terms(terms, limit, status)
         result = _dedupe([*result, *indexed_items], limit)
+    if not result and best_effort_direct:
+        best_effort_direct.sort(key=lambda item: (item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
+        result = _dedupe(best_effort_direct, limit)
+        status["douyin_video_fallback"] = "ok:best_effort_direct"
     status["douyin_video_terms"] = terms
     status["douyin_video_term_status"] = term_states
-    status["douyin_video_fallback"] = "ok" if result else "empty"
+    if "douyin_video_fallback" not in status:
+        status["douyin_video_fallback"] = "ok" if result else "empty"
     status["douyin_video_min_likes"] = DOUYIN_MIN_VIDEO_LIKES
     status["douyin_video_max_age_days"] = DOUYIN_MAX_VIDEO_AGE_DAYS
     return result
@@ -760,14 +781,14 @@ async def _get_text(client: httpx.AsyncClient, url: str) -> str:
     return resp.text
 
 
-async def _search_douyin(keyword: str, limit: int, status: dict[str, Any]) -> list[dict[str, Any]]:
+async def _search_douyin(keyword: str, limit: int, status: dict[str, Any], publish_time: int = 7) -> list[dict[str, Any]]:
     url = f"{config.douk_api_base.rstrip('/')}/douyin/search/video"
     payload = {
         "keyword": keyword,
         "pages": 1,
         "count": min(max(limit * 3, 10), 30),
         "sort_type": 0,
-        "publish_time": 7,
+        "publish_time": publish_time,
         "duration": 0,
         "search_range": 0,
         "source": False,
@@ -779,8 +800,14 @@ async def _search_douyin(keyword: str, limit: int, status: dict[str, Any]) -> li
         threshold = config.douyin_like_threshold
         viral = [i for i in items if i["likes"] >= threshold]
         result = _dedupe(viral or items, limit)
-        status["douyin"] = "ok" if result else "empty"
-        return result
+        if result:
+            status["douyin"] = "ok"
+            return result
+        # 近期窗口无结果，降级为全量时间范围重试
+        if publish_time != 0:
+            return await _search_douyin(keyword, limit, status, publish_time=0)
+        status["douyin"] = "empty"
+        return []
     except httpx.HTTPStatusError as exc:
         status["douyin"] = f"unavailable: HTTP {exc.response.status_code}"
         return []
@@ -981,13 +1008,11 @@ async def search_viral_content(keyword: str, source_url: str = "", limit: int = 
     items: list[dict[str, Any]] = []
 
     if video_only:
-        terms = _video_search_terms(keyword)
         status["douyin_video_mode"] = "keyword_index"
         status["douyin_hot"] = "skipped:keyword_video_search"
-        if terms:
-            items.extend(await _search_indexed_douyin_videos_by_terms(terms, limit, status))
-        status["douyin_video_terms"] = terms
-        status["douyin_video_fallback"] = "ok" if items else "empty"
+        if keyword:
+            # 优先 TikTokDownloader 直接搜索（含全量时间回退），再走索引兜底
+            items.extend(await _search_douyin_videos_by_terms(keyword, limit, status))
         status["douyin"] = "ok:keyword_videos" if items else "empty:keyword_videos"
         items = await _enrich_douyin_items(_dedupe(items, limit), status)
         search_links = [
