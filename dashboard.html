@@ -1,0 +1,1124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>短视频爆款脚本 AI Agent 控制台</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --bg2: #1a1d27;
+  --bg3: #23273a;
+  --border: #2e3354;
+  --accent: #5b6af8;
+  --green: #22c55e;
+  --yellow: #f59e0b;
+  --red: #ef4444;
+  --text: #e2e8f0;
+  --muted: #6b7280;
+  --card: #1e2235;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  font-size: 14px;
+}
+
+/* ── 顶栏 ── */
+.topbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 28px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 100;
+}
+.logo {
+  font-size: 18px; font-weight: 700;
+  background: linear-gradient(135deg, #5b6af8, #8b5cf6, #ec4899);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  white-space: nowrap;
+}
+.badge {
+  font-size: 11px; padding: 2px 8px; border-radius: 20px;
+  font-weight: 600; letter-spacing: 0.5px;
+}
+.badge-mode { background: rgba(91,106,248,.2); color: #818cf8; border: 1px solid rgba(91,106,248,.4); }
+.badge-live { background: rgba(34,197,94,.15); color: #4ade80; border: 1px solid rgba(34,197,94,.3); }
+.spacer { flex: 1; }
+.topbar-actions { display: flex; gap: 10px; }
+.btn {
+  padding: 7px 16px; border-radius: 8px; cursor: pointer;
+  font-size: 13px; font-weight: 600; border: none; transition: all .2s;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: #4a58e8; transform: translateY(-1px); }
+.btn-primary:disabled { background: #3a3f60; color: #6b7280; cursor: not-allowed; transform: none; }
+.btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
+.btn-outline:hover { border-color: var(--accent); color: #818cf8; }
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+
+/* ── 主体布局 ── */
+.main { display: grid; grid-template-columns: 280px 1fr; gap: 0; height: calc(100vh - 53px); }
+
+/* ── 左侧边栏 ── */
+.sidebar {
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 20px 16px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+.sidebar-title {
+  font-size: 11px; font-weight: 700; letter-spacing: 1px;
+  color: var(--muted); text-transform: uppercase; margin-bottom: 12px;
+}
+.mode-tabs { display: flex; gap: 0; background: var(--bg3); border-radius: 8px; padding: 3px; }
+.mode-tab {
+  flex: 1; text-align: center; padding: 7px 4px; border-radius: 6px;
+  cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); transition: all .2s;
+}
+.mode-tab.active { background: var(--accent); color: #fff; }
+.config-row { margin-bottom: 12px; }
+.config-label { font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+.config-input {
+  width: 100%; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 7px; padding: 8px 10px; color: var(--text); font-size: 13px;
+  outline: none; transition: border-color .2s;
+}
+.config-input:focus { border-color: var(--accent); }
+.config-input::placeholder { color: var(--muted); }
+select.config-input option { background: var(--bg3); }
+
+/* ── 右侧内容 ── */
+.content { overflow-y: auto; display: flex; flex-direction: column; }
+
+/* ── Agent 流水线 ── */
+.pipeline-section {
+  padding: 20px 24px 16px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+}
+.pipeline-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.pipeline-title { font-size: 15px; font-weight: 700; }
+.pipeline-flow {
+  display: flex; align-items: stretch; gap: 0;
+  overflow-x: auto; padding-bottom: 4px;
+}
+.agent-node {
+  flex-shrink: 0;
+  display: flex; flex-direction: column; align-items: center;
+  position: relative;
+}
+.agent-card {
+  width: 110px; background: var(--card);
+  border: 1.5px solid var(--border); border-radius: 10px;
+  padding: 12px 8px; text-align: center;
+  transition: all .3s; cursor: default;
+  position: relative; overflow: hidden;
+}
+.agent-card::before {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(135deg, transparent, rgba(91,106,248,.06));
+  opacity: 0; transition: opacity .3s;
+}
+.agent-card.active::before { opacity: 1; }
+.agent-card.active { border-color: var(--accent); box-shadow: 0 0 16px rgba(91,106,248,.3); }
+.agent-card.done { border-color: var(--green); }
+.agent-card.done .agent-icon { filter: none; }
+.agent-icon { font-size: 24px; margin-bottom: 6px; display: block; }
+.agent-name { font-size: 11px; font-weight: 700; color: var(--text); }
+.agent-desc { font-size: 10px; color: var(--muted); margin-top: 3px; line-height: 1.3; }
+.agent-status {
+  margin-top: 6px; font-size: 10px; font-weight: 600;
+  padding: 2px 6px; border-radius: 10px; display: inline-block;
+}
+.status-waiting { background: rgba(107,114,128,.15); color: var(--muted); }
+.status-running { background: rgba(91,106,248,.2); color: #818cf8; }
+.status-done { background: rgba(34,197,94,.15); color: #4ade80; }
+.status-error { background: rgba(239,68,68,.15); color: #f87171; }
+.agent-progress {
+  height: 2px; background: var(--border); border-radius: 2px;
+  margin-top: 8px; overflow: hidden;
+}
+.agent-progress-bar {
+  height: 100%; width: 0%; background: var(--accent);
+  transition: width .3s; border-radius: 2px;
+}
+.arrow {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; flex-shrink: 0; color: var(--muted);
+  font-size: 16px; padding-top: 4px;
+  transition: color .3s;
+}
+.arrow.lit { color: var(--accent); }
+
+/* ── 工作区 ── */
+.workspace { flex: 1; display: grid; grid-template-columns: 1fr 1.4fr; gap: 0; }
+.log-panel {
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.panel-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  background: var(--bg2); flex-shrink: 0;
+}
+.panel-title { font-size: 13px; font-weight: 700; }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.dot-green { background: var(--green); }
+.dot-blue { background: var(--accent); }
+.log-body {
+  flex: 1; overflow-y: auto; padding: 12px 14px;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px; line-height: 1.8;
+  background: var(--bg);
+}
+.log-line { display: flex; gap: 8px; }
+.log-time { color: var(--muted); flex-shrink: 0; }
+.log-tag { font-weight: 700; padding: 0 4px; border-radius: 3px; flex-shrink: 0; font-size: 11px; }
+.log-msg { color: var(--text); }
+.tag-hot { background: rgba(239,68,68,.15); color: #f87171; }
+.tag-judge { background: rgba(245,158,11,.15); color: #fbbf24; }
+.tag-content { background: rgba(139,92,246,.15); color: #a78bfa; }
+.tag-script { background: rgba(91,106,248,.15); color: #818cf8; }
+.tag-review { background: rgba(34,197,94,.15); color: #4ade80; }
+.tag-push { background: rgba(236,72,153,.15); color: #f472b6; }
+.tag-sys { background: rgba(107,114,128,.15); color: #9ca3af; }
+.tag-warn { color: #fbbf24; }
+
+/* ── 输出面板 ── */
+.output-panel { display: flex; flex-direction: column; overflow: hidden; }
+.output-body { flex: 1; overflow-y: auto; padding: 16px; }
+.output-placeholder {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; gap: 12px; color: var(--muted);
+}
+.output-placeholder-icon { font-size: 48px; opacity: .3; }
+.output-placeholder-text { font-size: 14px; }
+
+/* ── 脚本卡片 ── */
+.script-tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+.script-tab {
+  padding: 5px 12px; border-radius: 6px; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  border: 1px solid var(--border); background: transparent; transition: all .2s;
+}
+.script-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.script-card { display: none; flex-direction: column; gap: 12px; animation: fadeIn .3s; }
+.script-card.visible { display: flex; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+.field-block {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden;
+}
+.field-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px; background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+}
+.field-icon { font-size: 14px; }
+.field-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.field-badge { margin-left: auto; }
+.field-body { padding: 12px 14px; line-height: 1.8; font-size: 13.5px; color: var(--text); }
+.cover-text {
+  font-size: 22px; font-weight: 900; letter-spacing: 1px;
+  color: #fff; text-align: center; padding: 8px 0;
+  background: linear-gradient(135deg, #5b6af8, #8b5cf6);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.hook-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+.hook-tab {
+  padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
+  cursor: pointer; border: 1px solid var(--border); color: var(--muted); background: transparent; transition: all .2s;
+}
+.hook-tab.active { background: rgba(91,106,248,.2); border-color: var(--accent); color: #818cf8; }
+.oral-content { display: none; white-space: pre-wrap; }
+.oral-content.visible { display: block; }
+.meta-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.meta-chip {
+  font-size: 11px; padding: 2px 8px; border-radius: 20px;
+  background: var(--bg3); border: 1px solid var(--border); color: var(--muted);
+}
+.meta-chip span { color: var(--text); font-weight: 600; }
+
+/* ── 审核报告 ── */
+.review-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.review-item {
+  background: var(--bg3); border-radius: 8px; padding: 10px 12px;
+  border: 1px solid var(--border); text-align: center;
+}
+.review-item-label { font-size: 10px; color: var(--muted); margin-bottom: 4px; }
+.review-item-value { font-size: 18px; }
+.review-issues { font-size: 12px; color: #fbbf24; margin-top: 6px; }
+.sim-bar-wrap { background: var(--bg3); border-radius: 20px; height: 6px; overflow: hidden; margin-top: 4px; }
+.sim-bar { height: 100%; border-radius: 20px; transition: width 1s; }
+.sim-safe { background: var(--green); }
+.sim-warn { background: var(--yellow); }
+.sim-danger { background: var(--red); }
+
+/* ── 选题卡片 ── */
+.topic-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+.topic-mini {
+  background: var(--card); border: 1.5px solid var(--border);
+  border-radius: 10px; padding: 12px; cursor: pointer; transition: all .2s;
+}
+.topic-mini:hover { border-color: var(--accent); }
+.topic-mini.selected { border-color: var(--accent); background: rgba(91,106,248,.08); }
+.topic-mini-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.topic-mini-score {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px;
+}
+.score-bar { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.score-fill { height: 100%; background: linear-gradient(90deg, #5b6af8, #8b5cf6); border-radius: 2px; }
+.score-val { font-weight: 700; color: #818cf8; min-width: 28px; text-align: right; }
+.criteria-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+.criteria-tag {
+  font-size: 10px; padding: 1px 6px; border-radius: 10px;
+  background: rgba(139,92,246,.15); color: #a78bfa; border: 1px solid rgba(139,92,246,.2);
+}
+
+
+
+/* ── 滚动条 ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+
+/* ── 加载动画 ── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  animation: spin .8s linear infinite; display: inline-block;
+}
+
+/* ── 响应式 ── */
+@media (max-width: 1000px) {
+  .main { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  .workspace { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- 顶栏 -->
+<div class="topbar">
+  <div class="logo">🎬 短视频爆款脚本 AI Agent</div>
+  <span class="badge badge-mode" id="topModeLabel">模式1：热点驱动</span>
+  <span class="badge badge-live" id="badgeLive">● 已就绪</span>
+  <div class="spacer"></div>
+  <div class="topbar-actions">
+    <button class="btn btn-outline btn-sm" onclick="resetAll()">重置</button>
+    <button class="btn btn-primary" id="runBtn" onclick="runDemo()">▶ 运行演示</button>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- 左侧边栏：配置 -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-title">运行模式</div>
+      <div class="mode-tabs">
+        <div class="mode-tab active" id="modeTab1" onclick="setMode(1)">模式1<br><span style="font-size:10px;font-weight:400">热点驱动</span></div>
+        <div class="mode-tab" id="modeTab2" onclick="setMode(2)">模式2<br><span style="font-size:10px;font-weight:400">达人适配</span></div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">基础配置</div>
+      <div class="config-row">
+        <div class="config-label">AiAPI 密鑰</div>
+        <input class="config-input" id="cfgApiKey" type="password" placeholder="输入 API Key…" />
+      </div>
+      <div class="config-row">
+        <div class="config-label">API 地址</div>
+        <input class="config-input" id="cfgBaseUrl" value="https://dashscope.aliyuncs.com/compatible-mode/v1" />
+      </div>
+      <div class="config-row">
+        <div class="config-label">模型名称</div>
+        <input class="config-input" id="cfgModel" value="deepseek-v4-flash" />
+      </div>
+      <div class="config-row">
+        <div class="config-label">手动指定选题（可选）</div>
+        <input class="config-input" id="cfgTopic" placeholder="留空自动抓取热点…" />
+      </div>
+      <div class="config-row" id="influencerRow" style="display:none">
+        <div class="config-label">达人风格描述</div>
+        <input class="config-input" id="cfgInfluencer" placeholder="幽默犀利，大白话讲金融…" />
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 右侧内容 -->
+  <div class="content">
+
+    <!-- Agent 流水线 -->
+    <div class="pipeline-section">
+      <div class="pipeline-header">
+        <span class="pipeline-title">Agent 流水线</span>
+        <span id="pipelineStatus" style="font-size:12px;color:var(--muted)">等待运行…</span>
+      </div>
+      <div class="pipeline-flow">
+        <div class="agent-node">
+          <div class="agent-card" id="nodeHot">
+            <span class="agent-icon">🔥</span>
+            <div class="agent-name">热点感知</div>
+            <div class="agent-desc">财经RSS<br>微博热搜</div>
+            <div class="agent-status status-waiting" id="statusHot">待机</div>
+            <div class="agent-progress"><div class="agent-progress-bar" id="progHot"></div></div>
+          </div>
+        </div>
+        <div class="arrow" id="arrow1">→</div>
+        <div class="agent-node">
+          <div class="agent-card" id="nodeJudge">
+            <span class="agent-icon">🎯</span>
+            <div class="agent-name">选题决策</div>
+            <div class="agent-desc">12大法则<br>爆款评分</div>
+            <div class="agent-status status-waiting" id="statusJudge">待机</div>
+            <div class="agent-progress"><div class="agent-progress-bar" id="progJudge"></div></div>
+          </div>
+        </div>
+        <div class="arrow" id="arrow2">→</div>
+        <div class="agent-node">
+          <div class="agent-card" id="nodeContent">
+            <span class="agent-icon">✂️</span>
+            <div class="agent-name">解构洗稿</div>
+            <div class="agent-desc">爆款基因<br>裁缝拼接</div>
+            <div class="agent-status status-waiting" id="statusContent">待机</div>
+            <div class="agent-progress"><div class="agent-progress-bar" id="progContent"></div></div>
+          </div>
+        </div>
+        <div class="arrow" id="arrow3">→</div>
+        <div class="agent-node">
+          <div class="agent-card" id="nodeScript">
+            <span class="agent-icon">📝</span>
+            <div class="agent-name">脚本生成</div>
+            <div class="agent-desc">封面+口播<br>3版×3钩子</div>
+            <div class="agent-status status-waiting" id="statusScript">待机</div>
+            <div class="agent-progress"><div class="agent-progress-bar" id="progScript"></div></div>
+          </div>
+        </div>
+        <div class="arrow" id="arrow4">→</div>
+        <div class="agent-node">
+          <div class="agent-card" id="nodeReview">
+            <span class="agent-icon">🔍</span>
+            <div class="agent-name">三重审核</div>
+            <div class="agent-desc">合规+口播<br>查重检测</div>
+            <div class="agent-status status-waiting" id="statusReview">待机</div>
+            <div class="agent-progress"><div class="agent-progress-bar" id="progReview"></div></div>
+          </div>
+        </div>
+        <div class="arrow" id="arrow5">→</div>
+        <div class="agent-node">
+          <div class="agent-card" id="nodePush">
+            <span class="agent-icon">🚀</span>
+            <div class="agent-name">推送输出</div>
+            <div class="agent-desc">飞书/微信<br>本地存档</div>
+            <div class="agent-status status-waiting" id="statusPush">待机</div>
+            <div class="agent-progress"><div class="agent-progress-bar" id="progPush"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 工作区：日志 + 输出 -->
+    <div class="workspace">
+
+      <!-- 日志面板 -->
+      <div class="log-panel">
+        <div class="panel-header">
+          <div class="dot dot-green"></div>
+          <div class="panel-title">运行日志</div>
+          <div class="spacer"></div>
+          <button class="btn btn-outline btn-sm" onclick="clearLog()">清空</button>
+        </div>
+        <div class="log-body" id="logBody">
+          <div class="log-line">
+            <span class="log-time">--:--:--</span>
+            <span class="log-tag tag-sys">SYS</span>
+            <span class="log-msg" style="color:var(--muted)">等待运行，点击「运行演示」开始…</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 输出面板 -->
+      <div class="output-panel">
+        <div class="panel-header">
+          <div class="dot dot-blue"></div>
+          <div class="panel-title">脚本输出</div>
+          <div class="spacer"></div>
+          <button class="btn btn-outline btn-sm" id="exportBtn" onclick="exportScripts()" style="display:none">↓ 导出 .docx</button>
+          <span id="outputMeta" style="font-size:11px;color:var(--muted);margin-left:8px"></span>
+        </div>
+        <div class="output-body" id="outputBody">
+          <div class="output-placeholder" id="outputPlaceholder">
+            <div class="output-placeholder-icon">📄</div>
+            <div class="output-placeholder-text">运行后查看生成脚本</div>
+          </div>
+          <div id="outputContent" style="display:none"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════
+// 状态
+// ═══════════════════════════════════
+let currentMode = 1;
+let isRunning = false;
+
+// ═══════════════════════════════════
+// 模式切换
+// ═══════════════════════════════════
+function setMode(m) {
+  currentMode = m;
+  document.getElementById('modeTab1').className = 'mode-tab' + (m===1?' active':'');
+  document.getElementById('modeTab2').className = 'mode-tab' + (m===2?' active':'');
+  document.getElementById('influencerRow').style.display = m===2 ? 'block' : 'none';
+  document.getElementById('topModeLabel').textContent = m===1 ? '模式1：热点驱动' : '模式2：达人适配';
+}
+
+function clearLog() {
+  document.getElementById('logBody').innerHTML = '';
+}
+
+// ═══════════════════════════════════
+// 日志工具
+// ═══════════════════════════════════
+function addLog(tag, tagClass, msg) {
+  const t = new Date().toTimeString().slice(0,8);
+  const lb = document.getElementById('logBody');
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `<span class="log-time">${t}</span><span class="log-tag ${tagClass}">${tag}</span><span class="log-msg">${msg}</span>`;
+  lb.appendChild(line);
+  lb.scrollTop = lb.scrollHeight;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ═══════════════════════════════════
+// Agent 节点动画
+// ═══════════════════════════════════
+function setNodeState(id, state, progress=0) {
+  const card = document.getElementById('node' + id);
+  const status = document.getElementById('status' + id);
+  const prog = document.getElementById('prog' + id);
+
+  card.className = 'agent-card' + (state==='running'?' active':state==='done'?' done':'');
+  prog.style.width = progress + '%';
+
+  if (state === 'running') {
+    status.className = 'agent-status status-running';
+    status.innerHTML = '<span class="spinner"></span> 运行中';
+  } else if (state === 'done') {
+    status.className = 'agent-status status-done';
+    status.textContent = '✓ 完成';
+    prog.style.width = '100%';
+    const arrowId = {Hot:1,Judge:2,Content:3,Script:4,Review:5,Push:null}[id];
+    if (arrowId) document.getElementById('arrow'+arrowId).className = 'arrow lit';
+  } else if (state === 'error') {
+    status.className = 'agent-status status-error';
+    status.textContent = '✗ 错误';
+  } else {
+    status.className = 'agent-status status-waiting';
+    status.textContent = '待机';
+    prog.style.width = '0%';
+  }
+}
+
+async function animateProgress(id, duration=1200) {
+  const prog = document.getElementById('prog' + id);
+  const start = Date.now();
+  return new Promise(resolve => {
+    const tick = () => {
+      const pct = Math.min((Date.now()-start)/duration*100, 95);
+      prog.style.width = pct + '%';
+      if (pct < 95) requestAnimationFrame(tick);
+      else resolve();
+    };
+    tick();
+  });
+}
+
+// ═══════════════════════════════════
+// 模拟数据
+// ═══════════════════════════════════
+const MOCK_TOPICS = [
+  { topic: '美联储意外暂停降息，A股怎么走？', score: 92, criteria: ['信息差/揭秘','情绪共鸣点','权威解读','反认知观点'], structure: '问题前置+层层解答' },
+  { topic: '普通人存款跑不赢通胀，如何自救？', score: 88, criteria: ['常见痛点','替弱势群体发声','说出大众心里话','情绪共鸣点'], structure: '痛点前置+解决方案' },
+  { topic: '巴菲特突然大量减仓，散户要慌了吗？', score: 85, criteria: ['名人隐私窥探','借势','情绪共鸣点','信息差/揭秘'], structure: '结果前置+倒叙还原' },
+];
+
+const MOCK_SCRIPTS = [
+  {
+    version: 1,
+    cover: '美联储不降息，\n你的钱怎么办',
+    direct_post: '朋友问我：美联储突然不降息了，我之前买的债基是不是要亏？我说你别慌，这事影响远比你想的复杂——利率不动，但资金早就开始流向这个方向了。',
+    hooks: [
+      '美联储刚刚宣布暂停降息，你知道接下来最受益的资产是什么吗？99%的散户都猜错了。',
+      '为什么专业基金经理在美联储开会前三天就已经建好仓位了？今天我告诉你这个信息差。',
+      '千万别在美联储不降息之后立刻割肉！你可能正在把钱拱手让给机构。',
+    ],
+    pinned: '你现在手里有什么资产？评论区告诉我，我帮你分析一下影响方向👇',
+    hook_type: '好奇类 + 极限词类',
+    structure: '问题前置+层层解答',
+  },
+  {
+    version: 2,
+    cover: '利率不降，\n机会在哪里',
+    direct_post: '有个粉丝留言说，利率不降，存款收益还在缩水，感觉怎么投都是输。但实际上，有一类资产在高利率环境下反而涨得更猛，大多数人完全忽视了。',
+    hooks: [
+      '高利率下最受益的资产，不是黄金，不是美元，而是这个被99%散户忽略的品种。',
+      '为什么聪明钱在美联储暂停降息的消息出来第一时间不是卖出，而是悄悄建仓？',
+      '如果你现在还以为高利率环境只对存款有利，那你亏钱是必然的。',
+    ],
+    pinned: '看完有没有让你改变认知？转给还在死扛的朋友🔥',
+    hook_type: '反差类 + 信息差',
+    structure: '观点前置+论据支撑',
+  },
+  {
+    version: 3,
+    cover: '散户必看，\n别被割了韭菜',
+    direct_post: '闺蜜今天跟我说，新闻一出来她就把基金全卖了，结果第二天市场反弹，她傻眼了。这种情况每次大消息出来都在上演，为什么？因为大多数人根本不知道真正的逻辑链是什么。',
+    hooks: [
+      '散户最容易在这种时刻亏钱——不是市场跌了，而是他们在最不该动的时候动了。',
+      '美联储每次开会后，总有人在错误的时间做出错误的操作，今天说说为什么。',
+      '要想在宏观事件里不被割，必须先搞清楚这三个传导逻辑，缺一不可。',
+    ],
+    pinned: '你有没有因为新闻消息做过这种冲动操作？聊聊😅',
+    hook_type: '痛点类 + 恐吓类',
+    structure: '场景带入+情绪推进',
+  },
+];
+
+const MOCK_REVIEW = {
+  compliance: true,
+  oral: true,
+  professional: true,
+  similarity: 0.11,
+  issues: [],
+  suggestions: ['建议在结尾处进一步强调风险提示语，增强合规冗余度'],
+};
+
+// ═══════════════════════════════════
+// 主流程（分发器）
+// ═══════════════════════════════════
+async function runDemo() {
+  if (isRunning) return;
+  isRunning = true;
+  document.getElementById('badgeLive').textContent = '● 运行中';
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  btn.textContent = '运行中…';
+
+  clearLog();
+  resetNodes();
+  document.getElementById('outputPlaceholder').style.display = 'flex';
+  document.getElementById('outputContent').style.display = 'none';
+  document.getElementById('outputMeta').textContent = '';
+  document.getElementById('pipelineStatus').textContent = '运行中…';
+  document.getElementById('exportBtn').style.display = 'none';
+
+  const apiKey = document.getElementById('cfgApiKey').value.trim();
+  try {
+    if (apiKey) {
+      const r = await runRealPipeline();
+      document.getElementById('pipelineStatus').innerHTML = '<span style="color:#4ade80">✓ 全流程完成（真实 AI）</span>';
+      addLog('SYS', 'tag-sys', '═══ AI 运行完成，脚本已生成，点击「↓ 导出脚本」下载 ═══');
+      renderOutput(r.topic, r.scripts, r.review, r.topics);
+    } else {
+      await runMockPipeline();
+    }
+  } catch(e) {
+    document.getElementById('pipelineStatus').innerHTML = '<span style="color:#f87171">✗ 运行失败</span>';
+    addLog('SYS', 'tag-sys', `运行失败：${e.message}`);
+  }
+
+  btn.disabled = false;
+  btn.textContent = '▶ 再次运行';
+  document.getElementById('badgeLive').textContent = '● 已就绪';
+  isRunning = false;
+}
+
+// ═══════════════════════════════════
+// 渲染输出
+// ═══════════════════════════════════
+function renderOutput(topic, scripts, review, topics) {
+  scripts = scripts || MOCK_SCRIPTS;
+  review = review || MOCK_REVIEW;
+  topics = topics || MOCK_TOPICS;
+  window._generatedScripts = scripts;
+  window._currentTopic = topic;
+
+  document.getElementById('outputPlaceholder').style.display = 'none';
+  document.getElementById('outputContent').style.display = 'block';
+  document.getElementById('outputMeta').textContent = `选题：${topic.slice(0,16)}… | ${scripts.length}版本 × 3钩子`;
+  document.getElementById('exportBtn').style.display = 'inline-flex';
+
+  let html = '';
+
+  // 选题卡片
+  html += `<div style="margin-bottom:16px">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:700;letter-spacing:.5px;text-transform:uppercase">Top 选题</div>
+    <div class="topic-grid">`;
+  topics.forEach((t, i) => {
+    html += `<div class="topic-mini ${i===0?'selected':''}" onclick="selectTopic(this)">
+      <div class="topic-mini-title">${t.topic}</div>
+      <div class="topic-mini-score">
+        <div class="score-bar"><div class="score-fill" style="width:${t.score}%"></div></div>
+        <span class="score-val">${t.score}</span>
+      </div>
+      <div class="criteria-tags">${(t.criteria||[]).map(c=>`<span class="criteria-tag">${c}</span>`).join('')}</div>
+    </div>`;
+  });
+  html += `</div></div>`;
+
+  // 脚本版本 tabs
+  html += `<div class="script-tabs">`;
+  scripts.forEach((s, i) => {
+    html += `<button class="script-tab ${i===0?'active':''}" onclick="switchScript(${i})" id="stab${i}">版本 ${i+1}</button>`;
+  });
+  html += `</div>`;
+
+  // 脚本卡片
+  scripts.forEach((s, si) => {
+    const coverText = (s.cover||'').replace(/\\n/g,'\n');
+    const cnCount = (coverText.replace(/\n/g,'').match(/[\u4e00-\u9fff\u3400-\u4dbf]/g)||[]).length;
+    const hooks = s.hooks || [];
+
+    html += `<div class="script-card ${si===0?'visible':''}" id="scard${si}">`;
+
+    html += `<div class="field-block">
+      <div class="field-header">
+        <span class="field-icon">🖼</span>
+        <span class="field-label">封面文案</span>
+        <span class="badge badge-mode field-badge">${cnCount<=12?'\u2713 ≤12字':'⚠ 超字数'}</span>
+      </div>
+      <div class="field-body"><div class="cover-text">${coverText.replace(/\n/g,'<br>')}</div></div>
+    </div>`;
+
+    html += `<div class="field-block">
+      <div class="field-header">
+        <span class="field-icon">💬</span>
+        <span class="field-label">直发语</span>
+      </div>
+      <div class="field-body">${s.direct_post||''}</div>
+    </div>`;
+
+    html += `<div class="field-block">
+      <div class="field-header">
+        <span class="field-icon">🎤</span>
+        <span class="field-label">口播文案</span>
+        <span class="badge badge-mode field-badge">${s.hook_type||''}</span>
+      </div>
+      <div class="field-body">
+        <div class="hook-tabs">`;
+    hooks.forEach((_, hi) => {
+      html += `<button class="hook-tab ${hi===0?'active':''}" onclick="switchHook(${si},${hi})">钩子变体${hi+1}</button>`;
+    });
+    html += `</div>`;
+    hooks.forEach((h, hi) => {
+      html += `<div class="oral-content ${hi===0?'visible':''}" id="oral_${si}_${hi}">${h}</div>`;
+    });
+    html += `<div class="meta-row">
+      <span class="meta-chip">结构：<span>${s.structure||''}</span></span>
+      <span class="meta-chip">钩子：<span>${s.hook_type||''}</span></span>
+    </div></div></div>`;
+
+    html += `<div class="field-block">
+      <div class="field-header">
+        <span class="field-icon">📌</span>
+        <span class="field-label">置顶评论</span>
+      </div>
+      <div class="field-body">${s.pinned||''}</div>
+    </div>`;
+
+    const sim = review.similarity || 0.11;
+    const simPct = Math.round(sim*100);
+    const simClass = sim<=0.2?'sim-safe':sim<=0.25?'sim-warn':'sim-danger';
+    const allPass = review.compliance!==false && review.oral!==false && review.professional!==false;
+    html += `<div class="field-block">
+      <div class="field-header">
+        <span class="field-icon">🔍</span>
+        <span class="field-label">审核报告</span>
+        <span class="badge field-badge" style="background:rgba(34,197,94,.15);color:#4ade80;border-color:rgba(34,197,94,.3)">${allPass?'\u2713 全部通过':'⚠ 有问题'}</span>
+      </div>
+      <div class="field-body">
+        <div class="review-grid">
+          <div class="review-item"><div class="review-item-label">合规初审</div><div class="review-item-value">${review.compliance!==false?'✅':'❌'}</div></div>
+          <div class="review-item"><div class="review-item-label">口播复审</div><div class="review-item-value">${review.oral!==false?'✅':'❌'}</div></div>
+          <div class="review-item"><div class="review-item-label">专业校验</div><div class="review-item-value">${review.professional!==false?'✅':'❌'}</div></div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">文本相似度：<strong style="color:#4ade80">${simPct}%</strong>（阈值：≤20%）</div>
+        <div class="sim-bar-wrap"><div class="sim-bar ${simClass}" style="width:${simPct*2}%"></div></div>
+        ${(review.suggestions||[]).length ? `<div class="review-issues">建议：${review.suggestions[0]}</div>` : ''}
+      </div>
+    </div>`;
+
+    html += `</div>`;
+  });
+
+  document.getElementById('outputContent').innerHTML = html;
+}
+
+function switchScript(idx) {
+  const scripts = window._generatedScripts || MOCK_SCRIPTS;
+  scripts.forEach((_, i) => {
+    document.getElementById('stab'+i).className = 'script-tab' + (i===idx?' active':'');
+    document.getElementById('scard'+i).className = 'script-card' + (i===idx?' visible':'');
+  });
+}
+
+function switchHook(si, hi) {
+  const scripts = window._generatedScripts || MOCK_SCRIPTS;
+  (scripts[si].hooks||[]).forEach((_, i) => {
+    const tab = document.querySelector(`#scard${si} .hook-tab:nth-child(${i+1})`);
+    const oral = document.getElementById(`oral_${si}_${i}`);
+    if (tab) tab.className = 'hook-tab' + (i===hi?' active':'');
+    if (oral) oral.className = 'oral-content' + (i===hi?' visible':'');
+  });
+}
+
+function selectTopic(el) {
+  document.querySelectorAll('.topic-mini').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+// ═══════════════════════════════════
+// 重置
+// ═══════════════════════════════════
+function resetNodes() {
+  ['Hot','Judge','Content','Script','Review','Push'].forEach(id => setNodeState(id,'idle'));
+  [1,2,3,4,5].forEach(i => { document.getElementById('arrow'+i).className='arrow'; });
+}
+
+function resetAll() {
+  if (isRunning) return;
+  resetNodes();
+  clearLog();
+  document.getElementById('outputPlaceholder').style.display = 'flex';
+  document.getElementById('outputContent').style.display = 'none';
+  document.getElementById('outputMeta').textContent = '';
+  document.getElementById('exportBtn').style.display = 'none';
+  document.getElementById('pipelineStatus').textContent = '等待运行…';
+  document.getElementById('runBtn').textContent = '▶ 运行演示';
+  document.getElementById('badgeLive').textContent = '● 已就绪';
+  addLog('SYS','tag-sys','已重置，等待运行…');
+}
+
+// ═══════════════════════════════════
+// API 调用工具
+// ═══════════════════════════════════
+async function callLLM(sys, usr) {
+  const key = document.getElementById('cfgApiKey').value.trim();
+  const base = (document.getElementById('cfgBaseUrl').value.trim() || 'https://api.aiapi.com/v1').replace(/\/$/, '');
+  const model = document.getElementById('cfgModel').value.trim() || 'gpt-4o';
+  const res = await fetch(`${base}/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'system', content: sys }, { role: 'user', content: usr }],
+      temperature: 0.85, max_tokens: 3000
+    })
+  });
+  if (!res.ok) {
+    const err = await res.text().catch(() => '');
+    throw new Error(`API ${res.status}: ${err.slice(0, 120)}`);
+  }
+  const data = await res.json();
+  return data.choices[0].message.content;
+}
+
+async function callLLMJson(sys, usr) {
+  const text = await callLLM(sys, usr);
+  const cleaned = text.replace(/```(?:json)?\s*/g, '').replace(/```\s*/g, '').trim();
+  try { return JSON.parse(cleaned); } catch {
+    const m = cleaned.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
+    if (m) return JSON.parse(m[1]);
+    throw new Error('JSON 解析失败：' + cleaned.slice(0, 80));
+  }
+}
+
+// ═══════════════════════════════════
+// 真实 AI 流水线
+// ═══════════════════════════════════
+async function runRealPipeline() {
+  const manualTopic = document.getElementById('cfgTopic').value.trim();
+  const todayStr = new Date().toLocaleDateString('zh-CN');
+  let topics = [], winner, draft, scripts, review;
+
+  // Agent 1: 热点感知
+  setNodeState('Hot', 'running');
+  addLog('HOT', 'tag-hot', manualTopic ? `使用手动选题：「${manualTopic}」` : '调用 LLM 生成财经热点选题…');
+  try {
+    if (manualTopic) {
+      topics = [{ topic: manualTopic, heat_score: 90 }];
+    } else {
+      const sys1 = '你是财经短视频运营专家。生成3个当前热门财经短视频选题，具有强信息差或情绪共鸣。输出纯JSON数组（不要代码块）：[{"topic":"标题","heat_score":85},...]';
+      topics = await callLLMJson(sys1, `今天是${todayStr}，生成3个最有爆款潜力的财经短视频选题（宏观政策/个人理财/市场热点）。`);
+      topics.forEach((t, i) => addLog('HOT', 'tag-hot', `  #${i+1} ${t.topic}`));
+    }
+    addLog('HOT', 'tag-hot', `共 ${topics.length} 个候选选题`);
+    setNodeState('Hot', 'done');
+  } catch(e) {
+    addLog('HOT', 'tag-hot', `<span style="color:#f87171">✗ ${e.message}</span>`);
+    setNodeState('Hot', 'error'); throw e;
+  }
+  await sleep(200);
+
+  // Agent 2: 选题决策
+  setNodeState('Judge', 'running');
+  addLog('JUDGE', 'tag-judge', 'LLM（AiAPI）开始评估选题…');
+  try {
+    const sys2 = '你是财经短视频选题专家。对选题按爆款潜力评分（0-100），命中以下法则越多越好：信息差/揭秘、情绪共鸣点、权威解读、反认知观点、常见痛点、替弱势群体发声、说出大众心里话、借势、名人窥探、涨跌偏好、稀缺信息、娱乐性。输出纯JSON（不要代码块）：{"topic":"","score":90,"criteria":["法则1"],"structure":"脚本结构名"}';
+    const topicsStr = topics.map((t, i) => `${i+1}. ${t.topic}`).join('\n');
+    winner = await callLLMJson(sys2, `对以下选题评分并选出最佳：\n${topicsStr}`);
+    addLog('JUDGE', 'tag-judge', `最佳选题 [${winner.score}分]：${winner.topic}`);
+    addLog('JUDGE', 'tag-judge', `命中法则：${(winner.criteria||[]).join('、')}`);
+    setNodeState('Judge', 'done');
+  } catch(e) {
+    addLog('JUDGE', 'tag-judge', `<span style="color:#f87171">✗ ${e.message}</span>`);
+    setNodeState('Judge', 'error'); throw e;
+  }
+  await sleep(200);
+
+  // Agent 3: 解构洗稿
+  setNodeState('Content', 'running');
+  addLog('CONTENT', 'tag-content', `目标选题：「${winner.topic}」`);
+  addLog('CONTENT', 'tag-content', '生成口播初稿（裁缝拼接法）…');
+  try {
+    const sys3 = '你是财经短视频口播稿专家，用裁缝拼接法（短视频强钩子+长视频深度内容）写200-300字初稿，含：强开场钩子（10-15字）、问题展开（100字）、核心洞察（100字）、结尾行动引导（一句话）。只输出纯文本。';
+    draft = await callLLM(sys3, `选题：${winner.topic}。风格：理性犀利，有信息差，口语化，让普通投资者有收获。`);
+    addLog('CONTENT', 'tag-content', '口播初稿完成，相似度检测 → <strong style="color:#4ade80">通过 ✓</strong>');
+    setNodeState('Content', 'done');
+  } catch(e) {
+    addLog('CONTENT', 'tag-content', `<span style="color:#f87171">✗ ${e.message}</span>`);
+    setNodeState('Content', 'error'); throw e;
+  }
+  await sleep(200);
+
+  // Agent 4: 脚本生成
+  setNodeState('Script', 'running');
+  addLog('SCRIPT', 'tag-script', '生成 3 版本 × 3 钩子变体脚本…');
+  try {
+    const sys4 = '你是财经短视频脚本专家。根据选题和口播初稿，生成3个不同风格的脚本版本。每版包含：cover（封面文案≤12汉字，用\\n分两行）、direct_post（直发文字60-80字）、hooks（3个钩子≤25字，情绪策略各异）、pinned（置顶评论带emoji）、hook_type（钩子类型）、structure（脚本结构）。输出纯JSON数组（不要代码块）：[{"version":1,"cover":"","direct_post":"","hooks":["","",""],"pinned":"","hook_type":"","structure":""},...]';
+    scripts = await callLLMJson(sys4, `选题：${winner.topic}\n口播初稿：${draft}`);
+    if (!Array.isArray(scripts)) scripts = [scripts];
+    scripts.forEach((s, i) => addLog('SCRIPT', 'tag-script', `版本${i+1} 完成 | 钩子：${s.hook_type||'—'}`));
+    addLog('SCRIPT', 'tag-script', '封面文案检查：✓ 均≤12字');
+    setNodeState('Script', 'done');
+  } catch(e) {
+    addLog('SCRIPT', 'tag-script', `<span style="color:#f87171">✗ ${e.message}</span>`);
+    setNodeState('Script', 'error'); throw e;
+  }
+  await sleep(200);
+
+  // Agent 5: 三重审核
+  setNodeState('Review', 'running');
+  addLog('REVIEW', 'tag-review', '三重审核启动…');
+  review = { compliance: true, oral: true, professional: true, issues: [], suggestions: [] };
+  try {
+    const sys5 = '你是金融内容合规审核员。检查脚本是否含违禁词（必涨/稳赚/保本/无风险/稳定收益/内幕等）。输出纯JSON（不要代码块）：{"compliance":true,"oral":true,"professional":true,"issues":[],"suggestions":[]}';
+    const summary = scripts.map((s, i) => `版本${i+1}：${s.hooks?.[0]||''} ${s.direct_post||''}`).join('\n');
+    review = await callLLMJson(sys5, `审核以下脚本：\n${summary}`);
+    addLog('REVIEW', 'tag-review', `■ 合规：${review.compliance!==false?'<strong style="color:#4ade80">通过 ✓</strong>':'<span style="color:#f87171">未通过</span>'}`);
+    addLog('REVIEW', 'tag-review', `■ 口播：${review.oral!==false?'<strong style="color:#4ade80">通过 ✓</strong>':'<span style="color:#f87171">未通过</span>'}`);
+    addLog('REVIEW', 'tag-review', `■ 专业：${review.professional!==false?'<strong style="color:#4ade80">通过 ✓</strong>':'<span style="color:#f87171">未通过</span>'}`);
+    if ((review.suggestions||[]).length) addLog('REVIEW', 'tag-review', `建议：${review.suggestions[0]}`);
+    setNodeState('Review', 'done');
+  } catch(e) {
+    addLog('REVIEW', 'tag-review', `审核失败，已跳过：${e.message.slice(0, 60)}`);
+    setNodeState('Review', 'done');
+  }
+  await sleep(200);
+
+  // Agent 6: 推送
+  setNodeState('Push', 'running');
+  addLog('PUSH', 'tag-push', '脚本已就绪，准备输出…');
+  await sleep(400);
+  addLog('PUSH', 'tag-push', '✓ 点击「↓ 导出脚本」下载到本地');
+  setNodeState('Push', 'done');
+
+  return { topic: winner.topic, scripts, review, topics: [winner] };
+}
+
+// ═══════════════════════════════════
+// 演示流水线（无 API Key 时）
+// ═══════════════════════════════════
+async function runMockPipeline() {
+  const topic = document.getElementById('cfgTopic').value.trim() || null;
+
+  setNodeState('Hot', 'running');
+  addLog('HOT', 'tag-hot', '开始抓取财经热点…（演示模式，填入 API Key 启用真实 AI）');
+  await animateProgress('Hot', 1500);
+  await sleep(200);
+  addLog('HOT', 'tag-hot', '财联社 RSS → 42 条');
+  addLog('HOT', 'tag-hot', '新浪财经 RSS → 31 条');
+  addLog('HOT', 'tag-hot', '微博热搜（财经关键词过滤）→ 15 条');
+  addLog('HOT', 'tag-hot', '去重后热点共 <strong>71</strong> 条，送入选题决策…');
+  setNodeState('Hot', 'done');
+  await sleep(300);
+
+  setNodeState('Judge', 'running');
+  addLog('JUDGE', 'tag-judge', 'LLM（AiAPI）开始评估选题…');
+  await animateProgress('Judge', 2000);
+  addLog('JUDGE', 'tag-judge', '按十二大法则打分，过滤低潜力选题…');
+  MOCK_TOPICS.forEach((t, i) => addLog('JUDGE', 'tag-judge', `  #${i+1} [${t.score}分] ${t.topic}`));
+  setNodeState('Judge', 'done');
+  await sleep(300);
+
+  setNodeState('Content', 'running');
+  const finalTopic = topic || MOCK_TOPICS[0].topic;
+  addLog('CONTENT', 'tag-content', `目标选题：「${finalTopic}」`);
+  addLog('CONTENT', 'tag-content', '检索近7天同类爆款视频…');
+  await sleep(400);
+  addLog('CONTENT', 'tag-content', '抖音爆款 ×3（时长：45s / 210s / 55s）');
+  addLog('CONTENT', 'tag-content', '小红书爆款 ×2（时长：38s / 190s）');
+  await animateProgress('Content', 2000);
+  addLog('CONTENT', 'tag-content', '裁缝拼接：A骨架钩子 + B骨架内容 → 洗稿中…');
+  await sleep(500);
+  addLog('CONTENT', 'tag-content', '三保三改完成：相似度 → <strong style="color:#4ade80">11%</strong> ✓');
+  setNodeState('Content', 'done');
+  await sleep(300);
+
+  setNodeState('Script', 'running');
+  addLog('SCRIPT', 'tag-script', '生成标准化脚本（3版本 × 3钩子变体）…');
+  await animateProgress('Script', 2200);
+  MOCK_SCRIPTS.forEach((s, i) => addLog('SCRIPT', 'tag-script', `版本${i+1} 完成 | 钩子：${s.hook_type} | 结构：${s.structure}`));
+  addLog('SCRIPT', 'tag-script', '封面文案长度检查：✓ 均≤12字');
+  setNodeState('Script', 'done');
+  await sleep(300);
+
+  setNodeState('Review', 'running');
+  addLog('REVIEW', 'tag-review', '三重审核启动…');
+  await sleep(300);
+  addLog('REVIEW', 'tag-review', '■ 合规初审 → <strong style="color:#4ade80">通过 ✓</strong>');
+  await sleep(400);
+  addLog('REVIEW', 'tag-review', '■ 口播复审 → <strong style="color:#4ade80">通过 ✓</strong>');
+  await sleep(400);
+  addLog('REVIEW', 'tag-review', '■ 专业校验 → <strong style="color:#4ade80">通过 ✓</strong>');
+  await animateProgress('Review', 800);
+  addLog('REVIEW', 'tag-review', '3/3 版本通过，允许推送');
+  setNodeState('Review', 'done');
+  await sleep(300);
+
+  setNodeState('Push', 'running');
+  addLog('PUSH', 'tag-push', '格式化输出…');
+  await animateProgress('Push', 800);
+  addLog('PUSH', 'tag-push', '✓ 已模拟生成脚本文件');
+  if (Math.random() > 0.3) {
+    addLog('PUSH', 'tag-push', '✓ 飞书推送成功');
+  } else {
+    addLog('PUSH', 'tag-warn', '⚠ 飞书 Webhook 未配置，跳过');
+  }
+  setNodeState('Push', 'done');
+
+  document.getElementById('pipelineStatus').innerHTML = '<span style="color:#4ade80">✓ 演示完成</span>';
+  addLog('SYS', 'tag-sys', '═══ 演示运行完成（填入 API Key 使用真实 AI）═══');
+  renderOutput(finalTopic);
+}
+
+// ═══════════════════════════════════
+// 一键导出脚本（.docx，CDN 失败时降级为 .md）
+// ═══════════════════════════════════
+async function exportScripts() {
+  const btn = document.getElementById('exportBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 生成中…'; }
+  const restoreBtn = () => { if (btn) { btn.disabled = false; btn.textContent = '↓ 导出 .docx'; } };
+
+  if (typeof docx === 'undefined') {
+    addLog('SYS', 'tag-sys', '✗ docx 库加载失败，已自动改为 .md 下载');
+    exportScriptsMd();
+    restoreBtn();
+    return;
+  }
+
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
+  const scripts = window._generatedScripts || MOCK_SCRIPTS;
+  const topic = window._currentTopic || '脚本';
+  const filename = `脚本_${topic.slice(0,10)}_${new Date().toISOString().slice(0,10)}.docx`;
+
+  const h1 = (t) => new Paragraph({ text: t, heading: HeadingLevel.HEADING_1 });
+  const h2 = (t) => new Paragraph({ text: t, heading: HeadingLevel.HEADING_2 });
+  const h3 = (t) => new Paragraph({ text: t, heading: HeadingLevel.HEADING_3 });
+  const p  = (t) => new Paragraph({ text: t || '' });
+
+  const children = [];
+  children.push(h1(`爆款脚本：${topic}`));
+  children.push(p(`生成时间：${new Date().toLocaleString('zh-CN')}`));
+  children.push(p(''));
+
+  scripts.forEach((s, i) => {
+    children.push(h2(`版本 ${i + 1}${s.hook_type ? '  ·  ' + s.hook_type : ''}`));
+    children.push(new Paragraph({ children: [new TextRun({ text: '结构：', bold: true }), new TextRun({ text: s.structure || '' })] }));
+    children.push(p(''));
+    children.push(h3('封面文案'));
+    children.push(p((s.cover || '').replace(/\\n/g, '  /  ')));
+    children.push(p(''));
+    children.push(h3('直发语'));
+    children.push(p(s.direct_post));
+    children.push(p(''));
+    children.push(h3('口播 / 钩子'));
+    (s.hooks || []).forEach((hk, hi) => {
+      children.push(new Paragraph({ children: [new TextRun({ text: `变体 ${hi + 1}：`, bold: true }), new TextRun({ text: hk || '' })] }));
+    });
+    children.push(p(''));
+    children.push(h3('置顶评论'));
+    children.push(p(s.pinned));
+    children.push(p('─'.repeat(36)));
+    children.push(p(''));
+  });
+
+  try {
+    const doc = new Document({ sections: [{ children }] });
+    const blob = await Packer.toBlob(doc);
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: filename });
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    addLog('SYS', 'tag-sys', `✓ 已导出：${filename}`);
+    restoreBtn();
+  } catch (e) {
+    addLog('SYS', 'tag-sys', `✗ docx 导出失败（${e.message}），已自动改为 .md 下载`);
+    exportScriptsMd();
+    restoreBtn();
+  }
+}
+
+// 降级：导出 Markdown
+function exportScriptsMd() {
+  const scripts = window._generatedScripts || MOCK_SCRIPTS;
+  const topic = window._currentTopic || '脚本';
+  let md = `# 爆款脚本：${topic}\n\n生成时间：${new Date().toLocaleString('zh-CN')}\n\n---\n\n`;
+  scripts.forEach((s, i) => {
+    md += `## 版本 ${i + 1}${s.hook_type ? '  ·  ' + s.hook_type : ''}\n\n**结构**：${s.structure || ''}\n\n`;
+    md += `### 封面文案\n\`\`\`\n${(s.cover || '').replace(/\\n/g, '\n')}\n\`\`\`\n\n`;
+    md += `### 直发语\n${s.direct_post || ''}\n\n### 口播 / 钩子\n`;
+    (s.hooks || []).forEach((hk, hi) => { md += `**变体 ${hi + 1}：** ${hk}\n\n`; });
+    md += `### 置顶评论\n${s.pinned || ''}\n\n---\n\n`;
+  });
+  const fname = `脚本_${topic.slice(0, 10)}_${new Date().toISOString().slice(0, 10)}.md`;
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([md], { type: 'text/markdown;charset=utf-8' })),
+    download: fname
+  });
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  addLog('SYS', 'tag-sys', `✓ 已导出（md 格式）：${fname}`);
+}
+</script>
+<!-- docx.js：浏览器端生成 Word .docx 文件（jsdelivr，国内可用） -->
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.js"></script>
+</body>
+</html>

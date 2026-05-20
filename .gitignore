@@ -1,0 +1,22 @@
+# 环境变量（含 API Key，绝不上传）
+.env
+*.env
+
+# Python 编译产物
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# 生成的脚本文件（可选，按需注释掉）
+脚本_*.docx
+脚本_*.md
+
+# macOS 系统文件
+.DS_Store
