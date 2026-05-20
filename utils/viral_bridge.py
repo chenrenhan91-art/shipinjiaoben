@@ -35,7 +35,10 @@ DOUYIN_KEYWORD_GROUPS = {
     "房产": ["房产", "楼市", "房价", "买房", "卖房", "租房", "房贷", "地产", "小区", "物业"],
     "美妆": ["美妆", "护肤", "口红", "面膜", "防晒", "彩妆", "穿搭", "变美", "医美"],
 }
-DOUYIN_MIN_VIDEO_LIKES = 1000
+DOUYIN_MIN_VIDEO_LIKES = 10000   # 保留供参考，过滤主要依赖综合互动评分
+# 综合互动评分门槛：赞 + 评论×5 + 转发×8 + 收藏×3
+# 约等于：1万赞+正常互动比例，用于拦截无热度低质视频
+DOUYIN_MIN_ENGAGEMENT_SCORE = 15000
 DOUYIN_MAX_VIDEO_AGE_DAYS = 21
 DOUYIN_DIRECT_SEARCH_MAX_TERMS = 2
 DOUYIN_INDEX_FALLBACK_MAX_SECONDS = 60
@@ -368,7 +371,9 @@ def _core_video_score(item: dict[str, Any]) -> int:
 
 
 def _video_item_passes_heat(item: dict[str, Any]) -> bool:
-    return int(item.get("likes") or 0) >= DOUYIN_MIN_VIDEO_LIKES
+    # 优先使用已缓存的 core_score，避免重复计算
+    score = item.get("core_score") or _core_video_score(item)
+    return score >= DOUYIN_MIN_ENGAGEMENT_SCORE
 
 
 def _video_item_is_recent(item: dict[str, Any]) -> bool:
@@ -624,7 +629,7 @@ async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, s
     status["douyin_index_terms_used"] = searched_terms
     if "douyin_index_fallback" not in status:
         status["douyin_index_fallback"] = "ok" if result else "empty"
-    status["douyin_video_min_likes"] = DOUYIN_MIN_VIDEO_LIKES
+    status["douyin_video_min_engagement"] = DOUYIN_MIN_ENGAGEMENT_SCORE
     status["douyin_video_max_age_days"] = DOUYIN_MAX_VIDEO_AGE_DAYS
     status["douyin_video_filtered_low_heat"] = filtered_low_heat
     status["douyin_video_filtered_old"] = filtered_old
@@ -675,7 +680,7 @@ async def _search_douyin_videos_by_terms(keyword: str, limit: int, status: dict[
     status["douyin_video_term_status"] = term_states
     if "douyin_video_fallback" not in status:
         status["douyin_video_fallback"] = "ok" if result else "empty"
-    status["douyin_video_min_likes"] = DOUYIN_MIN_VIDEO_LIKES
+    status["douyin_video_min_engagement"] = DOUYIN_MIN_ENGAGEMENT_SCORE
     status["douyin_video_max_age_days"] = DOUYIN_MAX_VIDEO_AGE_DAYS
     return result
 
@@ -1151,8 +1156,38 @@ def _parse_vtt_srt(text: str) -> str:
     return "".join(deduped)
 
 
-async def get_video_transcript(video_url: str) -> dict[str, Any]:
-    """提取抖音视频口播文案。优先使用平台自带 ASR 字幕，回退到视频描述文字。"""
+async def _whisper_transcribe_url(video_url: str, api_key: str = "") -> str | None:
+    """下载抖音视频并调用 OpenAI Whisper API 转录，返回中文口播文案或 None。"""
+    effective_key = api_key or config.openai_api_key
+    if not (effective_key and video_url and video_url.startswith("http")):
+        return None
+    try:
+        video_data = b""
+        async with httpx.AsyncClient(trust_env=False, follow_redirects=True) as c:
+            async with c.stream("GET", video_url, headers=_headers(), timeout=30) as resp:
+                resp.raise_for_status()
+                async for chunk in resp.aiter_bytes(8192):
+                    video_data += chunk
+                    if len(video_data) > 22 * 1024 * 1024:  # 22 MB 上限
+                        break
+        if len(video_data) < 2000:
+            return None
+        from openai import AsyncOpenAI
+        oai = AsyncOpenAI(api_key=effective_key, base_url=config.openai_base_url, timeout=50)
+        result = await oai.audio.transcriptions.create(
+            model="whisper-1",
+            file=("audio.mp4", video_data, "video/mp4"),
+            language="zh",
+            response_format="text",
+        )
+        text = result.strip() if isinstance(result, str) else getattr(result, "text", "") or ""
+        return text if len(text) >= 8 else None
+    except Exception:
+        return None
+
+
+async def get_video_transcript(video_url: str, api_key: str | None = None) -> dict[str, Any]:
+    """提取抖音视频口播文案。优先使用平台字幕→Whisper ASR→视频描述文字。"""
     status: dict[str, Any] = {}
     video_url = _extract_first_url(video_url)
     if not video_url:
@@ -1165,10 +1200,10 @@ async def get_video_transcript(video_url: str) -> dict[str, Any]:
     api_url = f"{config.douk_api_base.rstrip('/')}/douyin/detail"
     try:
         async with httpx.AsyncClient(trust_env=False) as client:
-            raw = await _post_json(client, api_url, {"detail_id": detail_id, "source": False}, config.douk_api_token)
+            raw = await _post_json(client, api_url, {"detail_id": detail_id, "source": True}, config.douk_api_token)
         if isinstance(raw, dict) and "获取数据失败" in str(raw.get("message", "")):
             return {"ok": False, "error": "Cookie 未配置或已失效，请先在助手中完成抖音登录态配置"}
-        # 1. 平台 ASR 字幕（逐字稿，准确率最高）
+        # 1. 平台 ASR 字幕（逐字稿，准确率最高，实际上大多数视频无此字段）
         sub_urls = _find_subtitle_urls(raw)
         if sub_urls:
             async with httpx.AsyncClient(trust_env=False, follow_redirects=True) as c:
@@ -1181,7 +1216,24 @@ async def get_video_transcript(video_url: str) -> dict[str, Any]:
                             return {"ok": True, "transcript": transcript, "method": "subtitle", "detail_id": detail_id}
                     except Exception:
                         continue
-        # 2. 回退：视频描述（非逐字稿）
+        # 2. OpenAI Whisper ASR（从视频 CDN 下载音频流转录）
+        data_obj = raw.get("data") if isinstance(raw, dict) else None
+        cdn_url = ""
+        if isinstance(data_obj, dict):
+            # source: True 返回原始 aweme_detail，从 video.play_addr.url_list 取 CDN URL
+            vid_obj = data_obj.get("video") or {}
+            if isinstance(vid_obj, dict):
+                play_addr = vid_obj.get("play_addr") or {}
+                url_list = (play_addr.get("url_list") or []) if isinstance(play_addr, dict) else []
+                cdn_url = url_list[0] if url_list and isinstance(url_list[0], str) else ""
+                if not cdn_url:
+                    cdn_url = vid_obj.get("play_addr_h264", {}).get("url_list", [""])[0] if isinstance(vid_obj.get("play_addr_h264"), dict) else ""
+        effective_key = api_key or config.openai_api_key
+        if cdn_url and effective_key:
+            whisper_text = await _whisper_transcribe_url(cdn_url, api_key=effective_key)
+            if whisper_text:
+                return {"ok": True, "transcript": whisper_text, "method": "whisper", "detail_id": detail_id}
+        # 3. 回退：视频描述（非逐字稿）
         for d in _walk_dicts(raw):
             item = _normalize_item(d, "douyin", "detail")
             if item and item.get("script"):

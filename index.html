@@ -1560,6 +1560,16 @@ function platformDisplayName(platform) {
   return '平台作品';
 }
 
+function calcEngagementScore(item) {
+  const likes = Number(item.likes || 0);
+  const comments = Number(item.comment_count || 0);
+  const shares = Number(item.share_count || 0);
+  const collects = Number(item.collect_count || 0);
+  return item.core_score != null
+    ? Number(item.core_score)
+    : likes + comments * 5 + shares * 8 + collects * 3;
+}
+
 function formatPlatformStats(item) {
   const parts = [];
   const heat = Number(item.hot_value || item.heat_score || 0);
@@ -1567,11 +1577,15 @@ function formatPlatformStats(item) {
   const comments = Number(item.comment_count || 0);
   const shares = Number(item.share_count || 0);
   const collects = Number(item.collect_count || 0);
+  const engScore = calcEngagementScore(item);
   if (heat && !likes && item.source_type === 'hot_word') parts.push(formatHeat(heat));
   if (likes) parts.push(`${likes.toLocaleString('zh-CN')}赞`);
   if (comments) parts.push(`${comments.toLocaleString('zh-CN')}评`);
   if (shares) parts.push(`${shares.toLocaleString('zh-CN')}转`);
   if (collects) parts.push(`${collects.toLocaleString('zh-CN')}藏`);
+  if (engScore > 0 && item.source_type !== 'hot_word') {
+    parts.push(`综合热度 ${engScore.toLocaleString('zh-CN')}`);
+  }
   return parts.join(' · ') || (item.source_type === 'hot_word' ? '抖音热榜' : '作品级来源');
 }
 
@@ -1612,7 +1626,7 @@ function renderPlatformSourceSection(platform={}) {
       ${status.douyin_hot === 'ok' ? '<span class="platform-pill ok">抖音热榜：已接入</span>' : ''}
       ${status.douyin_video_fallback === 'ok' ? '<span class="platform-pill ok">相关视频：按核心数据排序</span>' : ''}
       ${keywordVideoMode ? '<span class="platform-pill ok">视频索引：关键词相关</span>' : ''}
-      ${status.douyin_video_min_likes ? `<span class="platform-pill">热度门槛：≥${Number(status.douyin_video_min_likes).toLocaleString('zh-CN')}赞</span>` : ''}
+      ${status.douyin_video_min_engagement ? `<span class="platform-pill">互动评分门槛：≥${Number(status.douyin_video_min_engagement).toLocaleString('zh-CN')}</span>` : ''}
       ${status.douyin_video_max_age_days ? `<span class="platform-pill">时间范围：近${Number(status.douyin_video_max_age_days).toLocaleString('zh-CN')}天</span>` : ''}
       ${status.douyin_video_filtered_low_heat ? `<span class="platform-pill warn">已过滤低热视频：${Number(status.douyin_video_filtered_low_heat).toLocaleString('zh-CN')}条</span>` : ''}
       ${status.douyin_video_filtered_old ? `<span class="platform-pill warn">已过滤过期视频：${Number(status.douyin_video_filtered_old).toLocaleString('zh-CN')}条</span>` : ''}
