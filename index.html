@@ -393,10 +393,9 @@ select.config-input option { background: var(--bg3); }
 .rewrite-kpis { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
 .rewrite-kpi { font-size: 10px; color: #a78bfa; background: rgba(139,92,246,.12); border: 1px solid rgba(139,92,246,.2); border-radius: 20px; padding: 2px 6px; }
 .rewrite-before-after { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-.rewrite-textbox { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
-.rewrite-textbox-label { font-size: 11px; color: var(--muted); font-weight: 800; margin-bottom: 6px; }
-.rewrite-textbox-text { font-size: 12px; line-height: 1.75; color: var(--text); white-space: pre-wrap; max-height: 320px; overflow-y: auto; }
-@media (max-width: 760px) { .rewrite-before-after { grid-template-columns: 1fr; } }
+.rewrite-textbox { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+.rewrite-textbox-text { font-size: 12px; line-height: 1.75; color: var(--text); white-space: pre-wrap; }
+@media (max-width: 760px) { .rewrite-flow { grid-template-columns: 1fr; } }
 
 
 
@@ -1057,7 +1056,6 @@ function renderRewriteProcessPanel(topic, scripts=[]) {
 
   const mainSource = sources[0] || {};
   const firstScript = scripts[0] || trace.finalScript || {};
-  const sourceScript = compactText(trace.referenceScript || mainSource.script || trace.sourceContent || '源视频文案、评论和互动数据会在这里汇总。', 800);
   const draft = compactText(trace.draft || firstScript.oral_script || '', 220);
   const finalOral = compactText(firstScript.oral_script || trace.draft || '', 220);
   const viralRef = compactText(trace.viralRef || '提取开头钩子、内容骨架、情绪锚点和互动引导方式。', 150);
@@ -1075,20 +1073,13 @@ function renderRewriteProcessPanel(topic, scripts=[]) {
   return `<div class="rewrite-panel">
     <div class="rewrite-head">
       <div>
-        <div class="rewrite-title">原视频文案洗稿思路</div>
-        <div class="rewrite-desc">说明本轮如何基于原视频文案内容调整表达方向、口播节奏和成稿长度。</div>
+        <div class="rewrite-title">改写方向与思路</div>
+        <div class="rewrite-desc">说明本轮如何调整表达方向、口播节奏和成稿长度。</div>
       </div>
       <span class="rewrite-badge">洗稿方向</span>
     </div>
-    <div class="rewrite-before-after">
-      <div class="rewrite-textbox">
-        <div class="rewrite-textbox-label">原视频文案内容</div>
-        <div class="rewrite-textbox-text">${escapeHtml(sourceScript)}</div>
-      </div>
-      <div class="rewrite-textbox">
-        <div class="rewrite-textbox-label">改写方向与思路</div>
-        <div class="rewrite-textbox-text">${escapeHtml(rewriteDirection)}\n\n${escapeHtml(rewriteThinking)}</div>
-      </div>
+    <div class="rewrite-textbox">
+      <div class="rewrite-textbox-text">${escapeHtml(rewriteDirection)}\n\n${escapeHtml(rewriteThinking)}</div>
     </div>
   </div>`;
 }
