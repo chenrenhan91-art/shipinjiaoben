@@ -322,15 +322,6 @@ select.config-input option { background: var(--bg3); }
 .source-open { color: var(--accent); }
 .source-use { color: var(--text); }
 .source-open:hover, .source-use:hover { border-color: var(--accent); }
-.source-transcript-btn { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; cursor: pointer; background: transparent; }
-.source-transcript-btn:hover { border-color: var(--accent); color: var(--accent); }
-.source-transcript-panel { display: none; margin-top: 8px; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
-.source-transcript-panel.visible { display: block; }
-.source-transcript-text { font-size: 12px; line-height: 1.75; color: var(--text); white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; }
-.source-transcript-warn { font-size: 11px; color: #fbbf24; margin-bottom: 6px; }
-.source-transcript-actions { display: flex; gap: 6px; margin-top: 8px; }
-.source-transcript-copy { font-size: 11px; color: var(--accent); cursor: pointer; border: 1px solid var(--border); border-radius: 5px; padding: 3px 8px; background: transparent; }
-.source-transcript-copy:hover { border-color: var(--accent); }
 .source-empty { color: var(--muted); padding: 24px 0; text-align: center; }
 .source-section { margin-bottom: 20px; }
 .source-section + .source-section { padding-top: 16px; border-top: 1px solid var(--border); }
@@ -1410,7 +1401,20 @@ async function fetchUrlContent(urlInput) {
     const text = String(data.source_text || '').trim();
     if (text.length >= 50) {
       const items = Array.isArray(data.items) ? data.items : [];
-      const rawScript = String(items[0]?.script || '').trim();
+      let rawScript = String(items[0]?.script || '').trim();
+      // 对抖音视频尝试提取平台 ASR 字幕，作为原视频文案内容
+      if (/douyin\.com|iesdouyin\.com/.test(url)) {
+        try {
+          const tr = await callHelper('/api/helper/transcript', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url }),
+          }, 15000);
+          if (tr?.ok && tr.transcript && tr.method === 'subtitle') {
+            rawScript = tr.transcript;
+          }
+        } catch (_) {}
+      }
       return { text: text.slice(0, 4000), script: rawScript };
     }
     throw new Error(data.status?.source_url === 'invalid' ? '链接格式无效' : '本机提取内容为空');
@@ -1589,11 +1593,7 @@ function renderPlatformSourceSection(platform={}) {
     const titleNode = url
       ? `<a class="source-card-title" href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>`
       : `<div class="source-card-title">${title}</div>`;
-    const canTranscript = item.platform === 'douyin' && item.source_type !== 'hot_word' && item.url;
-    const transcriptBtn = canTranscript
-      ? `<button class="source-transcript-btn" onclick="fetchTranscript(${idx}, '${escapeHtml(item.url)}')">提取文案</button>`
-      : '';
-    return `<div class="source-card" id="src-card-${idx}">
+    return `<div class="source-card">
       <div class="source-card-head">
         <span class="source-platform">${source}</span>
         <span class="source-heat">${stats}</span>
@@ -1603,14 +1603,6 @@ function renderPlatformSourceSection(platform={}) {
       <div class="source-actions">
         ${openLink}
         <button class="source-use" onclick="usePlatformSource(${idx})">用作选题</button>
-        ${transcriptBtn}
-      </div>
-      <div class="source-transcript-panel" id="transcript-panel-${idx}">
-        <div class="source-transcript-warn" id="transcript-warn-${idx}" style="display:none"></div>
-        <div class="source-transcript-text" id="transcript-text-${idx}"></div>
-        <div class="source-transcript-actions">
-          <button class="source-transcript-copy" onclick="copyTranscript(${idx})">复制文案</button>
-        </div>
       </div>
     </div>`;
   }).join('');
@@ -1918,44 +1910,6 @@ function usePlatformSource(index) {
   if (item.url) document.getElementById('cfgSourceUrl').value = item.url;
   addLog('HOT', 'tag-hot', `已选择${platformDisplayName(item.platform)}作为本轮选题：「${escapeHtml(title)}」`);
   document.getElementById('pipelineStatus').textContent = '已选择平台作品源，点击开始生成…';
-}
-
-async function fetchTranscript(idx, url) {
-  const panel = document.getElementById(`transcript-panel-${idx}`);
-  const textEl = document.getElementById(`transcript-text-${idx}`);
-  const warnEl = document.getElementById(`transcript-warn-${idx}`);
-  if (!panel || !textEl) return;
-  // 如果已有内容，切换显示/隐藏
-  if (panel.classList.contains('visible') && textEl.textContent) {
-    panel.classList.toggle('visible');
-    return;
-  }
-  panel.classList.add('visible');
-  textEl.textContent = '正在提取文案…';
-  warnEl.style.display = 'none';
-  try {
-    const res = await callHelper('/api/helper/transcript', { url }, 20000);
-    if (res?.ok && res.transcript) {
-      textEl.textContent = res.transcript;
-      if (res.warning) {
-        warnEl.textContent = '⚠ ' + res.warning;
-        warnEl.style.display = 'block';
-      }
-    } else {
-      textEl.textContent = res?.error || '提取失败，该视频可能无平台字幕';
-    }
-  } catch (e) {
-    textEl.textContent = '提取失败：' + (e.message || '未知错误');
-  }
-}
-
-function copyTranscript(idx) {
-  const textEl = document.getElementById(`transcript-text-${idx}`);
-  if (!textEl?.textContent) return;
-  navigator.clipboard.writeText(textEl.textContent).then(() => {
-    const btn = textEl.parentElement?.querySelector('.source-transcript-copy');
-    if (btn) { btn.textContent = '已复制 ✓'; setTimeout(() => btn.textContent = '复制文案', 1500); }
-  });
 }
 
 
