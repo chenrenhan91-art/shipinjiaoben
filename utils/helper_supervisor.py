@@ -266,6 +266,43 @@ async def import_douyin_cookie_from_browser(browser: str = "chrome") -> dict[str
     }
 
 
+async def set_douyin_cookie_direct(cookie: str) -> dict[str, Any]:
+    """直接向 TikTokDownloader /settings 接口写入 Cookie 字符串，无需手动操作工具菜单。"""
+    cookie = (cookie or "").strip()
+    if not cookie:
+        return {"ok": False, "status": "empty", "message": "Cookie 不能为空"}
+    # Step 1: POST to TikTokDownloader API（更新内存，立即生效）
+    try:
+        async with httpx.AsyncClient(trust_env=False) as client:
+            await client.post(
+                f"{config.douk_api_base.rstrip('/')}/settings",
+                json={"cookie": cookie},
+                timeout=8,
+            )
+    except Exception as exc:
+        return {"ok": False, "status": "api_error", "message": f"写入失败：{exc}"}
+    # Step 2: 同时写入 settings.json 文件，重启后也能保留
+    candidate = _menu_candidate()
+    settings_file = _find_settings_file(candidate)
+    if settings_file and settings_file.exists():
+        try:
+            data = json.loads(settings_file.read_text(encoding="utf-8"))
+            data["cookie"] = cookie
+            settings_file.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except Exception:
+            pass  # API 写入已完成，文件写入尽力而为
+    result = _cookie_status(candidate)
+    return {
+        "ok": result["configured"],
+        "status": "ok" if result["configured"] else "cookie_invalid",
+        "cookie": result,
+        "message": "Cookie 已写入并检测到有效登录态 ✓" if result["configured"]
+                   else "Cookie 已写入，但未检测到 sessionid 等关键字段，请确认 Cookie 来自已登录抖音的浏览器页面",
+    }
+
+
 async def ensure_douyin_tool_started() -> dict[str, Any]:
     before = await probe_douyin_tool()
     if before.get("ok"):

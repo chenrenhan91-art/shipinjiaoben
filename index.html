@@ -353,6 +353,26 @@ select.config-input option { background: var(--bg3); }
 .helper-action:hover { border-color: var(--accent); color: #818cf8; }
 .helper-action.primary:hover { color: #fff; background: #4a58e8; }
 .helper-status-line { font-size: 11px; color: var(--muted); }
+.cookie-setup-section { display: grid; gap: 10px; }
+.cookie-method-label { font-size: 11px; font-weight: 800; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+.cookie-browser-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.cookie-browser-btn {
+  font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer;
+}
+.cookie-browser-btn.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cookie-browser-btn:hover:not(.selected) { border-color: var(--accent); color: #818cf8; }
+.cookie-paste-area {
+  width: 100%; min-height: 60px; font-size: 11px; font-family: monospace;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); padding: 7px 9px; resize: vertical; box-sizing: border-box;
+}
+.cookie-paste-area:focus { outline: none; border-color: var(--accent); }
+.cookie-divider { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
+.cookie-divider::before, .cookie-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.cookie-result { font-size: 12px; padding: 6px 10px; border-radius: 6px; }
+.cookie-result.ok { background: #14532d33; color: #4ade80; border: 1px solid #4ade8044; }
+.cookie-result.err { background: #7f1d1d33; color: #f87171; border: 1px solid #f8717144; }
 
 /* ── 文案洗稿说明 ── */
 .rewrite-panel {
@@ -1607,6 +1627,122 @@ function renderPlatformSourceSection(platform={}) {
   </div>`;
 }
 
+// ── Cookie 配置面板 ──────────────────────────────────────────────────────────
+let _cookieSetupReturnAction = null;  // 配置成功后要重新执行的函数名
+
+function renderDouyinCookieSetup(keyword, returnAction) {
+  _cookieSetupReturnAction = returnAction || null;
+  document.getElementById('outputPlaceholder').style.display = 'none';
+  document.getElementById('outputContent').style.display = 'block';
+  document.getElementById('exportBtn').style.display = 'none';
+  document.getElementById('outputMeta').textContent = '配置抖音 Cookie';
+  const browsers = [
+    { key: 'chrome', label: 'Chrome' },
+    { key: 'safari', label: 'Safari' },
+    { key: 'firefox', label: 'Firefox' },
+    { key: 'edge', label: 'Edge' },
+    { key: 'arc', label: 'Arc' },
+    { key: 'brave', label: 'Brave' },
+  ];
+  const btnHtml = browsers.map(b =>
+    `<button class="cookie-browser-btn" id="cookieBrowserBtn_${b.key}" onclick="selectCookieBrowser('${b.key}')">${b.label}</button>`
+  ).join('');
+  document.getElementById('outputContent').innerHTML = `<div class="source-section">
+    <div class="helper-panel">
+      <div>
+        <div class="helper-panel-title">配置抖音 Cookie 登录态</div>
+        <div class="helper-panel-text">抖音搜索需要浏览器的登录 Cookie 才能获取内容，只需配置一次，后续自动保持。</div>
+      </div>
+      <div class="cookie-setup-section">
+        <div class="cookie-method-label">方式一：从本机浏览器一键导入（推荐）</div>
+        <div class="helper-panel-text" style="margin-top:-4px">先在浏览器中登录抖音，然后选择对应浏览器点击导入：</div>
+        <div class="cookie-browser-row">${btnHtml}</div>
+        <div class="helper-actions" style="margin-top:2px">
+          <button class="helper-action primary" id="cookieImportBtn" onclick="importCookieFromBrowser()">从浏览器导入</button>
+        </div>
+        <div id="cookieImportResult"></div>
+
+        <div class="cookie-divider" style="margin:4px 0">或</div>
+
+        <div class="cookie-method-label">方式二：手动粘贴 Cookie</div>
+        <div class="helper-panel-text" style="margin-top:-4px">
+          ① 用浏览器打开 <a href="https://www.douyin.com" target="_blank" style="color:#818cf8">www.douyin.com</a> 并登录&nbsp;&nbsp;
+          ② 按 <b>F12</b>（或右键→检查）→ <b>Network</b> 标签 → 刷新页面 → 点击任意请求&nbsp;&nbsp;
+          ③ 在右侧 <b>Request Headers</b> 找到 <b>cookie:</b>，复制整行的值粘贴到下方：
+        </div>
+        <textarea class="cookie-paste-area" id="cookiePasteInput" placeholder="msToken=xxx; sid_guard=xxx; sessionid=xxx; ..."></textarea>
+        <div class="helper-actions">
+          <button class="helper-action primary" onclick="savePastedCookie()">保存 Cookie</button>
+        </div>
+        <div id="cookiePasteResult"></div>
+      </div>
+
+      <div class="helper-actions" style="margin-top:4px">
+        ${returnAction ? `<button class="helper-action" onclick="${returnAction}()">跳过，直接搜索试试</button>` : ''}
+        <button class="helper-action" onclick="openDouyinLoginFromHelper()">打开抖音官网登录</button>
+      </div>
+    </div>
+  </div>`;
+  // 默认选中 Chrome
+  selectCookieBrowser('chrome');
+}
+
+let _selectedCookieBrowser = 'chrome';
+function selectCookieBrowser(browser) {
+  _selectedCookieBrowser = browser;
+  document.querySelectorAll('.cookie-browser-btn').forEach(btn => btn.classList.remove('selected'));
+  const el = document.getElementById(`cookieBrowserBtn_${browser}`);
+  if (el) el.classList.add('selected');
+}
+
+async function importCookieFromBrowser() {
+  const btn = document.getElementById('cookieImportBtn');
+  const resultEl = document.getElementById('cookieImportResult');
+  if (btn) { btn.disabled = true; btn.textContent = '导入中…'; }
+  if (resultEl) resultEl.innerHTML = '';
+  try {
+    const res = await callHelper(`/api/helper/import-douyin-cookie?browser=${_selectedCookieBrowser}`, { method: 'POST' }, 70000);
+    if (resultEl) {
+      resultEl.innerHTML = `<div class="cookie-result ${res.ok ? 'ok' : 'err'}">${escapeHtml(res.message || (res.ok ? '导入成功' : '导入失败'))}</div>`;
+    }
+    if (res.ok) {
+      lastHelperStatus = null;
+      setTimeout(() => _cookieSetupReturnAction ? window[_cookieSetupReturnAction]?.() : null, 1200);
+    }
+  } catch(e) {
+    if (resultEl) resultEl.innerHTML = `<div class="cookie-result err">请求失败：${escapeHtml(e.message)}</div>`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '从浏览器导入'; }
+  }
+}
+
+async function savePastedCookie() {
+  const cookie = (document.getElementById('cookiePasteInput')?.value || '').trim();
+  const resultEl = document.getElementById('cookiePasteResult');
+  if (!cookie) {
+    if (resultEl) resultEl.innerHTML = `<div class="cookie-result err">请先粘贴 Cookie 内容</div>`;
+    return;
+  }
+  if (resultEl) resultEl.innerHTML = `<div class="cookie-result" style="color:var(--muted)">保存中…</div>`;
+  try {
+    const res = await callHelper('/api/helper/set-douyin-cookie', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cookie }),
+    }, 10000);
+    if (resultEl) {
+      resultEl.innerHTML = `<div class="cookie-result ${res.ok ? 'ok' : 'err'}">${escapeHtml(res.message || (res.ok ? '保存成功' : '保存失败'))}</div>`;
+    }
+    if (res.ok) {
+      lastHelperStatus = null;
+      setTimeout(() => _cookieSetupReturnAction ? window[_cookieSetupReturnAction]?.() : null, 1200);
+    }
+  } catch(e) {
+    if (resultEl) resultEl.innerHTML = `<div class="cookie-result err">请求失败：${escapeHtml(e.message)}</div>`;
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function renderDouyinHelperBlocked(message='') {
   const detail = escapeHtml(message || '未检测到本机助手连接，无法抓取抖音平台热点源。');
   document.getElementById('outputPlaceholder').style.display = 'none';
@@ -1878,6 +2014,14 @@ async function runDouyinHotSearch() {
     }
   }
 
+  // 检测 Cookie 是否已配置，未配置则引导用户配置后再搜索
+  const freshStatus = lastHelperStatus || await checkLocalHelperStatus(false);
+  if (freshStatus?.douyin_cookie?.configured === false) {
+    renderDouyinCookieSetup(keyword, 'runDouyinHotSearch');
+    addLog('HOT', 'tag-hot', '<span style="color:#fbbf24">⚠ 抖音 Cookie 未配置，请先完成登录态配置</span>');
+    return;
+  }
+
   document.getElementById('outputMeta').textContent = '抖音热点源抓取中…';
   renderDouyinPlatformSources({ keyword, loading: true, items: [], status: { douyin: 'starting' }, searchLinks: [] });
   try {
@@ -1945,6 +2089,14 @@ async function runDouyinKeywordVideoSearch() {
       addLog('HOT', 'tag-hot', `<span style="color:#fbbf24">自动启动失败：${e.message}</span>`);
       return;
     }
+  }
+
+  // 检测 Cookie 是否已配置，未配置则引导用户配置后再搜索
+  const freshStatus2 = lastHelperStatus || await checkLocalHelperStatus(false);
+  if (freshStatus2?.douyin_cookie?.configured === false) {
+    renderDouyinCookieSetup(keyword, 'runDouyinKeywordVideoSearch');
+    addLog('HOT', 'tag-hot', '<span style="color:#fbbf24">⚠ 抖音 Cookie 未配置，请先完成登录态配置</span>');
+    return;
   }
 
   document.getElementById('outputMeta').textContent = '关键词相关热点视频搜索中…';

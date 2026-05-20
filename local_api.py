@@ -19,6 +19,7 @@ from utils.helper_supervisor import (
     import_douyin_cookie_from_browser,
     open_douyin_login_page,
     open_douyin_search_page,
+    set_douyin_cookie_direct,
 )
 from utils.crawler import fetch_all_hot_topics
 from utils.viral_bridge import check_douyin_status, extract_source_content, search_viral_content
@@ -81,6 +82,15 @@ async def restart_douyin_tool() -> dict:
 @app.post("/api/helper/import-douyin-cookie")
 async def import_douyin_cookie(browser: str = "chrome") -> dict:
     return await import_douyin_cookie_from_browser(browser)
+
+
+class SetCookieRequest(BaseModel):
+    cookie: str = Field(default="", description="抖音 Cookie 字符串")
+
+
+@app.post("/api/helper/set-douyin-cookie")
+async def set_douyin_cookie(payload: SetCookieRequest) -> dict:
+    return await set_douyin_cookie_direct(payload.cookie)
 
 
 @app.post("/api/helper/open-douyin-login")
