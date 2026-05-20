@@ -601,7 +601,9 @@ select.config-input option { background: var(--bg3); }
 let currentMode = 1;
 let isRunning = false;
 const DEFAULT_API_BASE = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
-const DEFAULT_MODEL = 'qwen3.6-flash';
+// 百炼免费额度模型切换链：额度耗尽时依次尝试下一个
+const FALLBACK_MODELS = ['qwen3.6-plus', 'qwen-plus', 'qwen3.6-flash', 'qwen-turbo'];
+let _llmModelIdx = 0;  // 当前使用的模型索引，额度耗尽后递增
 const HELPER_BASES = ['http://127.0.0.1:8765', 'http://127.0.0.1:8776'];
 const HELPER_INSTALLER_URL = new URL('scripts/shipinjiaoben_collector_installer.zip', window.location.href).href;
 const HELPER_GUIDE_URL = new URL('docs/helper-guide.md', window.location.href).href;
@@ -1287,27 +1289,65 @@ function resetAll() {
 // ═══════════════════════════════════
 // API 调用工具
 // ═══════════════════════════════════
+function _isQuotaExhausted(status, text) {
+  return status === 429
+    || text.includes('AllocationQuota.FreeTierOnly')
+    || text.includes('Arrearage')
+    || text.includes('InsufficientBalance');
+}
+
 async function callLLM(sys, usr) {
   // 过滤非 ASCII 字符，防止 fetch headers 报 non ISO-8859-1 错误（粘贴 key 时可能带入不可见 Unicode 字符）
   const key = document.getElementById('cfgApiKey').value.trim().replace(/[^\x20-\x7E]/g, '');
   const base = DEFAULT_API_BASE.replace(/\/$/, '');
-  const model = DEFAULT_MODEL;
-  const res = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: 'system', content: sys }, { role: 'user', content: usr }],
-      temperature: 0.85, max_tokens: 3000
-    }),
-    signal: AbortSignal.timeout(90000),
-  });
-  if (!res.ok) {
-    const err = await res.text().catch(() => '');
-    throw new Error(`AI 服务 ${res.status}: ${err.slice(0, 120)}`);
+
+  for (let mi = _llmModelIdx; mi < FALLBACK_MODELS.length; mi++) {
+    const model = FALLBACK_MODELS[mi];
+    try {
+      const res = await fetch(`${base}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'system', content: sys }, { role: 'user', content: usr }],
+          temperature: 0.85, max_tokens: 3000
+        }),
+        signal: AbortSignal.timeout(90000),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        if (_isQuotaExhausted(res.status, errText)) {
+          addLog('SYS', 'tag-sys', `⚠ 模型 ${model} 免费额度耗尽，切换下一个…`);
+          _llmModelIdx = Math.max(_llmModelIdx, mi + 1);
+          continue;
+        }
+        throw new Error(`AI 服务 ${res.status}: ${errText.slice(0, 120)}`);
+      }
+      const data = await res.json();
+      // 百炼有时 200 OK 但 body 含 error 字段
+      if (data.error) {
+        const errStr = (data.error.code || '') + ' ' + (data.error.message || '');
+        if (_isQuotaExhausted(200, errStr)) {
+          addLog('SYS', 'tag-sys', `⚠ 模型 ${model} 免费额度耗尽，切换下一个…`);
+          _llmModelIdx = Math.max(_llmModelIdx, mi + 1);
+          continue;
+        }
+        throw new Error(`AI 错误 [${data.error.code}]: ${(data.error.message || '').slice(0, 100)}`);
+      }
+      if (mi > 0) addLog('SYS', 'tag-sys', `✓ 正在使用模型: ${model}`);
+      return data.choices[0].message.content;
+    } catch (e) {
+      if (e.name === 'TimeoutError' || e.name === 'AbortError') throw e;
+      if (_isQuotaExhausted(0, e.message || '')) {
+        addLog('SYS', 'tag-sys', `⚠ 模型 ${model} 免费额度耗尽，切换下一个…`);
+        _llmModelIdx = Math.max(_llmModelIdx, mi + 1);
+        continue;
+      }
+      if (mi >= FALLBACK_MODELS.length - 1) throw e;
+      addLog('SYS', 'tag-sys', `⚠ 模型 ${model} 调用失败，切换下一个…`);
+    }
   }
-  const data = await res.json();
-  return data.choices[0].message.content;
+  throw new Error(`所有模型(${FALLBACK_MODELS.join(' / ')})额度均已耗尽或调用失败，请检查 API Key 或充值`);
 }
 
 // 仅对 JSON 字符串值内的原始控制字符进行转义（不影响结构层的空白）
@@ -1402,15 +1442,16 @@ async function fetchUrlContent(urlInput) {
     if (text.length >= 50) {
       const items = Array.isArray(data.items) ? data.items : [];
       let rawScript = String(items[0]?.script || '').trim();
-      // 对抖音视频尝试提取平台 ASR 字幕，作为原视频文案内容
+      // 对抖音视频尝试提取口播文案（平台字幕 → Whisper ASR → 描述文字）
       if (/douyin\.com|iesdouyin\.com/.test(url)) {
         try {
+          const apiKey = document.getElementById('cfgApiKey')?.value?.trim() || '';
           const tr = await callHelper('/api/helper/transcript', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url }),
-          }, 15000);
-          if (tr?.ok && tr.transcript && tr.method === 'subtitle') {
+            body: JSON.stringify({ url, api_key: apiKey }),
+          }, 60000);  // Whisper 转录最长需 ~40s
+          if (tr?.ok && tr.transcript && (tr.method === 'subtitle' || tr.method === 'whisper')) {
             rawScript = tr.transcript;
           }
         } catch (_) {}
