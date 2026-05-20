@@ -1845,11 +1845,23 @@ async function runDouyinHotSearch() {
     return;
   }
 
-  const douyinReady = !!status.douyin_tool?.ok;
+  let douyinReady = !!status.douyin_tool?.ok;
   if (!douyinReady) {
-    renderDouyinHelperBlocked('本机助手已连接，但抖音采集服务未就绪');
-    addLog('HOT', 'tag-hot', '<span style="color:#fbbf24">抖音采集服务未就绪，无法抓取抖音热点源。</span>');
-    return;
+    addLog('HOT', 'tag-hot', '抖音采集服务未就绪，正在自动启动采集工具…');
+    try {
+      const startResult = await callHelper('/api/helper/start', { method: 'POST' }, 25000);
+      douyinReady = !!startResult?.ok;
+      if (!douyinReady) {
+        renderDouyinHelperBlocked('本机助手已连接，但抖音采集服务未就绪');
+        addLog('HOT', 'tag-hot', `<span style="color:#fbbf24">自动启动失败：${startResult?.message || '未知错误'}</span>`);
+        return;
+      }
+      addLog('HOT', 'tag-hot', '抖音采集工具已自动启动 ✓');
+    } catch(e) {
+      renderDouyinHelperBlocked('本机助手已连接，但抖音采集服务未就绪');
+      addLog('HOT', 'tag-hot', `<span style="color:#fbbf24">自动启动失败：${e.message}</span>`);
+      return;
+    }
   }
 
   document.getElementById('outputMeta').textContent = '抖音热点源抓取中…';
@@ -1902,11 +1914,23 @@ async function runDouyinKeywordVideoSearch() {
     return;
   }
 
-  const douyinReady = !!status.douyin_tool?.ok;
+  let douyinReady = !!status.douyin_tool?.ok;
   if (!douyinReady) {
-    renderDouyinHelperBlocked('本机助手已连接，但抖音采集服务未就绪');
-    addLog('HOT', 'tag-hot', '<span style="color:#fbbf24">抖音采集服务未就绪，无法搜索关键词相关热点视频。</span>');
-    return;
+    addLog('HOT', 'tag-hot', '抖音采集服务未就绪，正在自动启动采集工具…');
+    try {
+      const startResult = await callHelper('/api/helper/start', { method: 'POST' }, 25000);
+      douyinReady = !!startResult?.ok;
+      if (!douyinReady) {
+        renderDouyinHelperBlocked('本机助手已连接，但抖音采集服务未就绪');
+        addLog('HOT', 'tag-hot', `<span style="color:#fbbf24">自动启动失败：${startResult?.message || '未知错误'}</span>`);
+        return;
+      }
+      addLog('HOT', 'tag-hot', '抖音采集工具已自动启动 ✓');
+    } catch(e) {
+      renderDouyinHelperBlocked('本机助手已连接，但抖音采集服务未就绪');
+      addLog('HOT', 'tag-hot', `<span style="color:#fbbf24">自动启动失败：${e.message}</span>`);
+      return;
+    }
   }
 
   document.getElementById('outputMeta').textContent = '关键词相关热点视频搜索中…';
