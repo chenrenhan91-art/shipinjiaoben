@@ -360,9 +360,16 @@ async def helper_status() -> dict[str, Any]:
     candidates = _candidate_commands()
     candidate = _menu_candidate()
     douyin_tool = await probe_douyin_tool()
+    # 读取安装时写入的版本号
+    version = ""
+    try:
+        version = (PROJECT_DIR / "VERSION").read_text(encoding="utf-8").strip()
+    except OSError:
+        pass
     return {
         "ok": True,
         "helper": "running",
+        "version": version,
         "project_dir": str(PROJECT_DIR),
         "python": sys.executable,
         "port": config.local_api_port,

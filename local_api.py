@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import os
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,9 +57,17 @@ async def allow_private_network_access(request, call_next):
 
 @app.get("/api/health")
 async def health() -> dict:
+    # 读取安装时写入的版本号（由 install_macos_helper.sh 生成）
+    version_file = os.path.join(os.path.dirname(__file__), "VERSION")
+    helper_version = ""
+    try:
+        helper_version = open(version_file).read().strip()
+    except OSError:
+        pass
     return {
         "ok": True,
         "helper": "running",
+        "version": helper_version,
         "douk_api_base": config.douk_api_base,
         "xhs_api_base": config.xhs_api_base,
     }
@@ -95,11 +104,12 @@ async def set_douyin_cookie(payload: SetCookieRequest) -> dict:
 
 class TranscriptRequest(BaseModel):
     url: str = Field(default="", description="抖音视频链接")
+    api_key: str = Field(default="", description="OpenAI API Key（可选，优先级高于服务端配置）")
 
 
 @app.post("/api/helper/transcript")
 async def get_transcript(payload: TranscriptRequest) -> dict:
-    return await get_video_transcript(payload.url)
+    return await get_video_transcript(payload.url, api_key=payload.api_key or None)
 
 
 @app.post("/api/helper/open-douyin-login")

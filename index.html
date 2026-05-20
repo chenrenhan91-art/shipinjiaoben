@@ -608,6 +608,8 @@ const HELPER_BASES = ['http://127.0.0.1:8765', 'http://127.0.0.1:8776'];
 const HELPER_INSTALLER_URL = new URL('scripts/shipinjiaoben_collector_installer.zip', window.location.href).href;
 const HELPER_GUIDE_URL = new URL('docs/helper-guide.md', window.location.href).href;
 const HELPER_INSTALL_COMMAND = `cd ~/Downloads && curl -fL "${HELPER_INSTALLER_URL.replace(/"/g, '\\"')}" -o shipinjiaoben_collector_installer.zip && rm -rf shipinjiaoben_collector_installer && mkdir shipinjiaoben_collector_installer && unzip -o shipinjiaoben_collector_installer.zip -d shipinjiaoben_collector_installer && open shipinjiaoben_collector_installer/Collector_Helper_Installer.app`;
+// 与此版本 index.html 匹配的最低 helper 版本；低于此值时提示用户重装
+const REQUIRED_HELPER_VERSION = '20260520';
 let activeHelperBase = '';
 let helperConnected = false;
 let lastHelperStatus = null;
@@ -767,24 +769,38 @@ async function checkLocalHelperStatus(showPanel=false) {
     updateDouyinHotButton(status);
     const douyinReady = status.douyin_tool?.ok ? '抖音采集服务已连接' : '抖音采集服务未启动';
     const cookieReady = status.douyin_cookie?.configured ? '登录态已配置' : '登录态未配置';
-    document.getElementById('hotSourceHint').textContent = `助手已连接：${activeHelperBase}，${douyinReady}，${cookieReady}。抖音热点源可以尝试抓取。`;
-    document.getElementById('badgeLive').textContent = '● 助手已连接';
-    addLog('SYS', 'tag-sys', `本机助手已连接：${activeHelperBase}`);
+    // 版本检测：若助手版本落后于页面要求版本，提示用户重装
+    const helperVer = status.version || '';
+    const needsUpdate = helperVer && helperVer < REQUIRED_HELPER_VERSION;
+    if (needsUpdate) {
+      addLog('SYS', 'tag-warn', `⚠ 助手版本 ${helperVer} 已过期（当前需 ${REQUIRED_HELPER_VERSION}），建议重装助手以获得最新功能`);
+    }
+    const versionNote = needsUpdate
+      ? ` ⚠ 助手版本过旧（${helperVer}），请重装`
+      : helperVer ? ` · 版本 ${helperVer}` : '';
+    document.getElementById('hotSourceHint').textContent = `助手已连接：${activeHelperBase}，${douyinReady}，${cookieReady}。抖音热点源可以尝试抓取。${versionNote}`;
+    document.getElementById('badgeLive').textContent = needsUpdate ? '● 助手需更新' : '● 助手已连接';
+    addLog('SYS', 'tag-sys', `本机助手已连接：${activeHelperBase}${helperVer ? '（版本 ' + helperVer + '）' : ''}`);
     if (showPanel) {
       document.getElementById('outputPlaceholder').style.display = 'none';
       document.getElementById('outputContent').style.display = 'block';
       document.getElementById('exportBtn').style.display = 'none';
       document.getElementById('outputMeta').textContent = '本机助手已连接';
+      const updateBanner = needsUpdate
+        ? `<div class="helper-status-line" style="color:#fbbf24">⚠ 助手版本 ${escapeHtml(helperVer)} 已过期，请重装以获取最新功能（当前需 ${escapeHtml(REQUIRED_HELPER_VERSION)}）</div>`
+        : '';
       document.getElementById('outputContent').innerHTML = `<div class="helper-panel">
         <div>
           <div class="helper-panel-title">本机助手已连接</div>
           <div class="helper-panel-text">当前端口：${escapeHtml(activeHelperBase)}。抖音平台热点源需要本机助手和抖音登录态；公开热点源可从左侧单独查看。</div>
         </div>
+        ${updateBanner}
         <div class="helper-status-line">${escapeHtml(douyinReady)} · ${escapeHtml(cookieReady)}</div>
         <div class="helper-actions">
           <button class="helper-action primary" onclick="loadDouyinHotSources()">抓取抖音热点源</button>
           <button class="helper-action" onclick="loadPublicHotSources()">查看公开热点源</button>
           <button class="helper-action" onclick="openDouyinLoginFromHelper()">打开抖音登录</button>
+          ${needsUpdate ? `<a class="helper-action" href="${HELPER_INSTALLER_URL}" download>重装新版助手</a>` : ''}
           <button class="helper-action" onclick="renderHelperGuide()">使用教程</button>
         </div>
       </div>`;
