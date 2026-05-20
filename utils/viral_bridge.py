@@ -1084,6 +1084,121 @@ async def search_viral_content(keyword: str, source_url: str = "", limit: int = 
     }
 
 
+def _find_subtitle_urls(data: Any, depth: int = 0) -> list[str]:
+    """递归在 TikTokDownloader detail 响应中查找抖音 ASR 字幕下载 URL。"""
+    if depth > 6:
+        return []
+    urls_zh: list[str] = []
+    urls_other: list[str] = []
+    if isinstance(data, dict):
+        for key in ("subtitle_infos", "subtitles", "video_subtitles", "caption_infos"):
+            entries = data.get(key)
+            if isinstance(entries, list):
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    url_list = entry.get("url_list")
+                    url = (entry.get("url") or
+                           (url_list[0] if isinstance(url_list, list) and url_list else "") or
+                           entry.get("subtitle_url") or "")
+                    if not (url and isinstance(url, str) and url.startswith("http")):
+                        continue
+                    lang = str(entry.get("language") or entry.get("language_code") or "").lower()
+                    if "zh" in lang or "zho" in lang or "chn" in lang or not lang:
+                        urls_zh.append(url)
+                    else:
+                        urls_other.append(url)
+            elif isinstance(entries, dict):
+                # {"zho": {"url": "...", "format": "webvtt"}}
+                for lang, entry in entries.items():
+                    if not isinstance(entry, dict):
+                        continue
+                    url = entry.get("url") or ""
+                    if not (url and url.startswith("http")):
+                        continue
+                    if "zh" in lang.lower() or "zho" in lang.lower():
+                        urls_zh.append(url)
+                    else:
+                        urls_other.append(url)
+        if urls_zh or urls_other:
+            return urls_zh + urls_other
+        for v in data.values():
+            result = _find_subtitle_urls(v, depth + 1)
+            if result:
+                return result
+    elif isinstance(data, list):
+        for item in data:
+            result = _find_subtitle_urls(item, depth + 1)
+            if result:
+                return result
+    return []
+
+
+def _parse_vtt_srt(text: str) -> str:
+    """将 VTT / SRT 字幕文本解析为连续文字，去重相邻重复行。"""
+    lines: list[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or "-->" in line or line.startswith("WEBVTT") or re.match(r"^\d+$", line):
+            continue
+        lines.append(line)
+    deduped: list[str] = []
+    prev = ""
+    for line in lines:
+        if line != prev:
+            deduped.append(line)
+            prev = line
+    return "".join(deduped)
+
+
+async def get_video_transcript(video_url: str) -> dict[str, Any]:
+    """提取抖音视频口播文案。优先使用平台自带 ASR 字幕，回退到视频描述文字。"""
+    status: dict[str, Any] = {}
+    video_url = _extract_first_url(video_url)
+    if not video_url:
+        return {"ok": False, "error": "无效的链接"}
+    resolved = await _resolve_source_url(video_url, status)
+    m = re.search(r"(\d{16,22})", f"{video_url} {resolved}")
+    if not m:
+        return {"ok": False, "error": "无法提取视频 ID，请使用抖音视频直链（含 /video/ 或分享短链）"}
+    detail_id = m.group(1)
+    api_url = f"{config.douk_api_base.rstrip('/')}/douyin/detail"
+    try:
+        async with httpx.AsyncClient(trust_env=False) as client:
+            raw = await _post_json(client, api_url, {"detail_id": detail_id, "source": False}, config.douk_api_token)
+        if isinstance(raw, dict) and "获取数据失败" in str(raw.get("message", "")):
+            return {"ok": False, "error": "Cookie 未配置或已失效，请先在助手中完成抖音登录态配置"}
+        # 1. 平台 ASR 字幕（逐字稿，准确率最高）
+        sub_urls = _find_subtitle_urls(raw)
+        if sub_urls:
+            async with httpx.AsyncClient(trust_env=False, follow_redirects=True) as c:
+                for su in sub_urls[:3]:
+                    try:
+                        resp = await c.get(su, timeout=10)
+                        resp.raise_for_status()
+                        transcript = _parse_vtt_srt(resp.text)
+                        if len(transcript) >= 8:
+                            return {"ok": True, "transcript": transcript, "method": "subtitle", "detail_id": detail_id}
+                    except Exception:
+                        continue
+        # 2. 回退：视频描述（非逐字稿）
+        for d in _walk_dicts(raw):
+            item = _normalize_item(d, "douyin", "detail")
+            if item and item.get("script"):
+                return {
+                    "ok": True,
+                    "transcript": item["script"],
+                    "method": "description",
+                    "detail_id": detail_id,
+                    "warning": "该视频暂无平台 ASR 字幕，以下为视频描述（非完整逐字口播稿）",
+                }
+        return {"ok": False, "error": "未能获取文案（无字幕数据且视频描述为空）"}
+    except httpx.RequestError as exc:
+        return {"ok": False, "error": f"采集服务连接失败：{exc.__class__.__name__}，请确认本机助手正在运行"}
+    except Exception as exc:
+        return {"ok": False, "error": f"提取失败：{str(exc)[:120]}"}
+
+
 async def extract_source_content(source_url: str) -> dict[str, Any]:
     source_url = _extract_first_url(source_url)
     status: dict[str, Any] = {}

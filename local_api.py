@@ -22,7 +22,7 @@ from utils.helper_supervisor import (
     set_douyin_cookie_direct,
 )
 from utils.crawler import fetch_all_hot_topics
-from utils.viral_bridge import check_douyin_status, extract_source_content, search_viral_content
+from utils.viral_bridge import check_douyin_status, extract_source_content, search_viral_content, get_video_transcript
 
 
 class ViralSearchRequest(BaseModel):
@@ -91,6 +91,15 @@ class SetCookieRequest(BaseModel):
 @app.post("/api/helper/set-douyin-cookie")
 async def set_douyin_cookie(payload: SetCookieRequest) -> dict:
     return await set_douyin_cookie_direct(payload.cookie)
+
+
+class TranscriptRequest(BaseModel):
+    url: str = Field(default="", description="抖音视频链接")
+
+
+@app.post("/api/helper/transcript")
+async def get_transcript(payload: TranscriptRequest) -> dict:
+    return await get_video_transcript(payload.url)
 
 
 @app.post("/api/helper/open-douyin-login")
