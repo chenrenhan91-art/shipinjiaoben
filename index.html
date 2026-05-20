@@ -1517,6 +1517,11 @@ function renderPlatformSourceSection(platform={}) {
   const keywordNoMatch = String(status.douyin_hot || '').startsWith('empty:keyword_no_match');
   const keywordVideoMode = status.douyin_video_mode === 'keyword_index';
   const videoFallbackEmpty = (keywordNoMatch || keywordVideoMode) && status.douyin_video_fallback === 'empty';
+  // 检测 Cookie 是否缺失：直接搜索全部返回 unavailable:no_cookie
+  const termStatuses = Object.values(status.douyin_video_term_status || {});
+  const allNoCookie = termStatuses.length > 0 && termStatuses.every(s => String(s).includes('no_cookie'));
+  const cookieNotConfigured = allNoCookie || lastHelperStatus?.douyin_cookie?.configured === false;
+  const cookieHelpUrl = lastHelperStatus?.cookie_help_url || 'https://github.com/JoeanAmier/TikTokDownloader/blob/master/docs/Cookie%E8%8E%B7%E5%8F%96%E6%95%99%E7%A8%8B.md';
   const douyinStatus = status.douyin === 'ok:hot_list'
     ? '热榜已返回'
     : status.douyin === 'ok:video_fallback'
@@ -1529,6 +1534,7 @@ function renderPlatformSourceSection(platform={}) {
       <span class="platform-pill ${douyinOk ? 'ok' : 'warn'}">抖音：${douyinOk ? `已抓到 ${items.filter(i => i.platform === 'douyin').length} 条` : (videoFallbackEmpty ? '热榜无匹配，相关视频无结果' : keywordNoMatch ? '当前关键词无匹配热榜' : '等待作品源或登录态')}</span>
       ${douyinOnly ? '' : `<span class="platform-pill ${xhsOk ? 'ok' : 'warn'}">小红书：${xhsOk ? `已抓到 ${items.filter(i => i.platform === 'xiaohongshu').length} 条` : '当前提供搜索/链接采集入口'}</span>`}
       ${douyinStatus ? `<span class="platform-pill">抖音接口：${escapeHtml(douyinStatus)}</span>` : ''}
+      ${videoFallbackEmpty && cookieNotConfigured ? `<span class="platform-pill warn" style="cursor:pointer" onclick="window.open('${cookieHelpUrl}','_blank')">⚠ 抖音 Cookie 未配置，点击查看教程</span>` : ''}
       ${status.douyin_hot === 'ok' ? '<span class="platform-pill ok">抖音热榜：已接入</span>' : ''}
       ${status.douyin_video_fallback === 'ok' ? '<span class="platform-pill ok">相关视频：按核心数据排序</span>' : ''}
       ${keywordVideoMode ? '<span class="platform-pill ok">视频索引：关键词相关</span>' : ''}
@@ -1577,7 +1583,15 @@ function renderPlatformSourceSection(platform={}) {
   </div>` : '';
   const body = platform.loading
     ? '<div class="source-empty"><span class="spinner"></span> 正在通过本机助手抓取抖音/小红书平台源…</div>'
-    : (cards ? `<div class="source-grid">${cards}</div>` : `<div class="source-empty">${videoFallbackEmpty ? '当前关键词相关热点视频暂未返回可用内容。可以换一个更具体或更宽泛的关键词再搜索。' : keywordNoMatch ? '当前关键词没有匹配到抖音热榜内容。可以点击下方按钮搜索关键词相关热点视频。' : '暂未抓到作品卡片。可先打开平台搜索页查看源头，或确认平台登录态后刷新。'}</div>`);
+    : (cards ? `<div class="source-grid">${cards}</div>` : `<div class="source-empty">${
+        videoFallbackEmpty && cookieNotConfigured
+          ? `抖音搜索需要配置 Cookie 登录态才能返回内容。<br><a href="${cookieHelpUrl}" target="_blank" style="color:#60a5fa;text-decoration:underline">查看 Cookie 获取教程</a>，配置完成后点击"搜索关键词相关热点视频"重试。`
+          : videoFallbackEmpty
+            ? '当前关键词相关热点视频暂未返回可用内容。可以换一个更具体或更宽泛的关键词再搜索。'
+            : keywordNoMatch
+              ? '当前关键词没有匹配到抖音热榜内容。可以点击下方按钮搜索关键词相关热点视频。'
+              : '暂未抓到作品卡片。可先打开平台搜索页查看源头，或确认平台登录态后刷新。'
+      }</div>`);
 
   return `<div class="source-section">
     <div class="source-section-head">

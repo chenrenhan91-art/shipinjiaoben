@@ -796,6 +796,10 @@ async def _search_douyin(keyword: str, limit: int, status: dict[str, Any], publi
     try:
         async with httpx.AsyncClient(trust_env=False) as client:
             data = await _post_json(client, url, payload, config.douk_api_token, timeout=10)
+        # 检测 Cookie 缺失（抖音搜索返回"获取数据失败！"），立即停止重试
+        if isinstance(data, dict) and "获取数据失败" in str(data.get("message", "")):
+            status["douyin"] = "unavailable:no_cookie"
+            return []
         items = [i for d in _walk_dicts(data) if (i := _normalize_item(d, "douyin", "TikTokDownloader"))]
         threshold = config.douyin_like_threshold
         viral = [i for i in items if i["likes"] >= threshold]
@@ -824,6 +828,9 @@ async def _detail_douyin_by_id(detail_id: str, status: dict[str, Any]) -> dict[s
     try:
         async with httpx.AsyncClient(trust_env=False) as client:
             data = await _post_json(client, url, payload, config.douk_api_token)
+        # 检测 Cookie 缺失，快速失败避免占用索引搜索时间预算
+        if isinstance(data, dict) and "获取数据失败" in str(data.get("message", "")):
+            return None
         candidates: list[dict[str, Any]] = []
         for raw in _walk_dicts(data):
             item = _normalize_item(raw, "douyin", "TikTokDownloader/detail")
