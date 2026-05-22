@@ -10,7 +10,7 @@ from typing import List, Optional, Tuple
 from agents.base_agent import BaseAgent
 from data_models import ScriptVersion, ReviewReport, GeneratedScripts
 from utils.llm import chat_json
-from utils.text_utils import similarity
+from utils.text_utils import has_douyin_risk, similarity
 from prompts.system_prompts import REVIEW_SYSTEM, REVIEW_USER
 
 
@@ -48,6 +48,16 @@ class ReviewAgent(BaseAgent):
         professional_passed = data.get("professional_passed", True)
         issues = data.get("issues", [])
         suggestions = data.get("suggestions", [])
+
+        risk_text = "\n".join([
+            script.cover_copy,
+            script.direct_post,
+            oral_content,
+            script.pinned_comment,
+        ])
+        if has_douyin_risk(risk_text):
+            compliance_passed = False
+            issues.append("包含抖音财经内容易限流/违规的话术，如留代码、诊股、私信或加群导流")
 
         if not dedup_passed:
             issues.append(f"文本相似度 {max_sim:.1%}，超过 20% 阈值，需进一步洗稿")

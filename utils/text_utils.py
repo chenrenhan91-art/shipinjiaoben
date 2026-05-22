@@ -74,6 +74,46 @@ def oral_length_instruction(profile: dict) -> str:
     )
 
 
+DOUYIN_RISK_PATTERNS = [
+    re.compile(r"(?:评论区|评论|留言|私信|留下|留|发|打出|扣[一1])[^。！？!?；;\n]{0,28}(?:股票代码|基金代码|代码|持仓|个股|票)[^。！？!?；;\n]{0,42}", re.I),
+    re.compile(r"(?:股票代码|基金代码|代码|持仓|个股|票)[^。！？!?；;\n]{0,28}(?:发我|告诉我|留给我|留下来|放评论区|打在评论区)", re.I),
+    re.compile(r"(?:我|老师|博主|这边)[^。！？!?；;\n]{0,16}(?:帮你|给你|替你|免费)[^。！？!?；;\n]{0,28}(?:分析|查看|诊断|看看|解读|判断|估值|把关)", re.I),
+    re.compile(r"(?:免费诊股|诊股|荐股|带单|跟单|内幕消息|进群|加群|加微信|加我|VX|V信|私信|点击主页|主页领取|关注我|点关注|一键三连|双击屏幕|稳赚|必涨|必赚|保本|稳定收益|肯定涨|抄底|逃顶)", re.I),
+]
+
+
+def has_douyin_risk(text: str) -> bool:
+    """检查抖音财经内容中容易触发限流或违规的导流诊断话术。"""
+    value = text or ""
+    return any(pattern.search(value) for pattern in DOUYIN_RISK_PATTERNS)
+
+
+def safe_pinned_comment(topic: str = "这个话题") -> str:
+    short_topic = clean_text(topic)[:18] or "这个话题"
+    return f"关于「{short_topic}」，你最想弄明白哪一层影响？可以聊聊你的观察。"
+
+
+def sanitize_douyin_text(text: str, role: str = "oral", topic: str = "") -> str:
+    """移除留代码、诊股、私信加群等风险句，置顶评论命中风险时直接换成讨论问题。"""
+    value = (text or "").strip()
+    if not value:
+        return safe_pinned_comment(topic) if role == "pinned" else ""
+    if role == "pinned" and has_douyin_risk(value):
+        return safe_pinned_comment(topic)
+
+    segments = re.findall(r"[^。！？!?；;\n]+[。！？!?；;]?|\n+", value) or [value]
+    kept = [segment.strip() for segment in segments if segment.strip() and not has_douyin_risk(segment)]
+    cleaned = "".join(kept).strip()
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = re.sub(r"([。！？!?；;]){2,}", r"\1", cleaned)
+
+    if not cleaned and role == "pinned":
+        return safe_pinned_comment(topic)
+    if not cleaned:
+        return "这部分只做逻辑观察，不做具体投资建议，重点看背后的风险和变量。"
+    return cleaned
+
+
 def check_cover_length(cover: str) -> bool:
     """封面文案字数检查：≤12个汉字"""
     return count_chars(cover) <= 12

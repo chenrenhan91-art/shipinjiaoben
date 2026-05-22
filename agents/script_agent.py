@@ -8,7 +8,12 @@ from typing import List
 from agents.base_agent import BaseAgent
 from data_models import TopicReport, GeneratedScripts, ScriptVersion, OralScript
 from utils.llm import chat_json
-from utils.text_utils import check_cover_length, oral_length_instruction, oral_length_profile
+from utils.text_utils import (
+    check_cover_length,
+    oral_length_instruction,
+    oral_length_profile,
+    sanitize_douyin_text,
+)
 from prompts.system_prompts import SCRIPT_GEN_SYSTEM, SCRIPT_GEN_USER
 
 
@@ -48,16 +53,22 @@ class ScriptAgent(BaseAgent):
                 oral_list = [
                     OralScript(
                         hook_variant=o.get("hook_variant", idx + 1),
-                        content=o.get("content", ""),
+                        content=sanitize_douyin_text(
+                            o.get("content", ""), role="oral", topic=topic
+                        ),
                     )
                     for idx, o in enumerate(item.get("oral_scripts", []))
                 ]
                 versions.append(ScriptVersion(
                     version=item.get("version", len(versions) + 1),
                     cover_copy=cover,
-                    direct_post=item.get("direct_post", ""),
+                    direct_post=sanitize_douyin_text(
+                        item.get("direct_post", ""), role="direct_post", topic=topic
+                    ),
                     oral_scripts=oral_list,
-                    pinned_comment=item.get("pinned_comment", ""),
+                    pinned_comment=sanitize_douyin_text(
+                        item.get("pinned_comment", ""), role="pinned", topic=topic
+                    ),
                     hook_type=item.get("hook_type", ""),
                     structure_type=item.get("structure_type", ""),
                 ))

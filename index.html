@@ -483,12 +483,11 @@ select.config-input option { background: var(--bg3); }
       <div class="sidebar-title">热点源</div>
       <button class="btn btn-outline sidebar-full-control" onclick="loadPublicHotSources()">↗ 公开热点源（免平台登录）</button>
       <button class="btn btn-outline sidebar-full-control" id="douyinHotBtn" onclick="loadDouyinHotSources()">抖音热点源（需助手）</button>
-      <button class="btn btn-outline sidebar-full-control" id="helperCheckBtn" onclick="checkLocalHelperStatus(true)">检测/连接本机助手</button>
       <button class="btn btn-outline sidebar-full-control" onclick="openDouyinLoginFromHelper()">打开抖音登录</button>
       <a class="btn btn-outline sidebar-full-control sidebar-link-control" id="helperInstallLink" href="scripts/shipinjiaoben_collector_installer.zip" download>首次安装/更新助手</a>
       <button class="btn btn-outline sidebar-full-control" onclick="renderHelperGuide()">使用教程</button>
       <div id="helperQuickStatus" class="helper-sidebar-status">正在检测本机助手；安装一次后会自动复用。</div>
-      <div id="hotSourceHint" class="hot-source-hint">抖音热点源需要本机助手连接；已安装用户点击检测即可复用，无需重复下载。</div>
+      <div id="hotSourceHint" class="hot-source-hint">抖音热点源需要本机助手连接；已安装用户点击抖音热点源即可自动检测复用。</div>
     </div>
 
   </div>
@@ -679,7 +678,6 @@ function saveHelperBase(base) {
 
 function setSidebarHelperUi(state='checking', message='') {
   const statusEl = document.getElementById('helperQuickStatus');
-  const checkBtn = document.getElementById('helperCheckBtn');
   const installLink = document.getElementById('helperInstallLink');
   const labels = {
     checking: '正在检测本机助手…',
@@ -690,16 +688,6 @@ function setSidebarHelperUi(state='checking', message='') {
   if (statusEl) {
     statusEl.className = `helper-sidebar-status ${state}`;
     statusEl.textContent = message || labels[state] || labels.checking;
-  }
-  if (checkBtn) {
-    checkBtn.disabled = state === 'checking';
-    checkBtn.textContent = state === 'checking'
-      ? '检测中…'
-      : state === 'connected'
-        ? '助手已连接'
-        : state === 'update'
-          ? '检测/更新助手'
-          : '检测/连接本机助手';
   }
   if (installLink) {
     installLink.style.display = state === 'connected' ? 'none' : 'block';
@@ -957,7 +945,7 @@ const MOCK_SCRIPTS = [
       '为什么专业基金经理在美联储开会前三天就已经建好仓位了？今天我告诉你这个信息差。',
       '千万别在美联储不降息之后立刻割肉！你可能正在把钱拱手让给机构。',
     ],
-    pinned: '你现在手里有什么资产？评论区告诉我，我帮你分析一下影响方向👇',
+    pinned: '你更关注哪类资产受到影响？可以聊聊你的观察和担心。',
     hook_type: '好奇类 + 极限词类',
     structure: '问题前置+层层解答',
   },
@@ -1088,6 +1076,74 @@ function oralLengthOutOfRange(text, profile) {
   if (!profile?.hasReference) return false;
   const chars = countOralChars(text);
   return chars < profile.min || chars > profile.max;
+}
+
+const DOUYIN_RISK_PATTERNS = [
+  /(?:评论区|评论|留言|私信|留下|留|发|打出|扣[一1])[^。！？!?；;\n]{0,28}(?:股票代码|基金代码|代码|持仓|个股|票)[^。！？!?；;\n]{0,42}/i,
+  /(?:股票代码|基金代码|代码|持仓|个股|票)[^。！？!?；;\n]{0,28}(?:发我|告诉我|留给我|留下来|放评论区|打在评论区)/i,
+  /(?:我|老师|博主|这边)[^。！？!?；;\n]{0,16}(?:帮你|给你|替你|免费)[^。！？!?；;\n]{0,28}(?:分析|查看|诊断|看看|解读|判断|估值|把关)/i,
+  /(?:免费诊股|诊股|荐股|带单|跟单|内幕消息|进群|加群|加微信|加我|VX|V信|私信|点击主页|主页领取|关注我|点关注|一键三连|双击屏幕|稳赚|必涨|必赚|保本|稳定收益|肯定涨|抄底|逃顶)/i,
+];
+
+function hasDouyinRisk(value) {
+  const text = String(value || '');
+  return DOUYIN_RISK_PATTERNS.some(pattern => pattern.test(text));
+}
+
+function safePinnedComment(topic='这个话题') {
+  const shortTopic = compactText(topic, 18);
+  return `关于「${shortTopic}」，你最想弄明白哪一层影响？可以聊聊你的观察。`;
+}
+
+function sanitizeDouyinComplianceText(value, role='oral', topic='') {
+  const text = String(value || '').trim();
+  if (!text) return role === 'pinned' ? safePinnedComment(topic) : '';
+  if (role === 'pinned' && hasDouyinRisk(text)) return safePinnedComment(topic);
+  const segments = text.match(/[^。！？!?；;\n]+[。！？!?；;]?|\n+/g) || [text];
+  let cleaned = segments
+    .map(segment => segment.trim())
+    .filter(Boolean)
+    .filter(segment => !hasDouyinRisk(segment))
+    .join('');
+  cleaned = cleaned
+    .replace(/\s{2,}/g, ' ')
+    .replace(/([。！？!?；;]){2,}/g, '$1')
+    .trim();
+  if (!cleaned && role === 'pinned') return safePinnedComment(topic);
+  if (!cleaned) return '这部分只做逻辑观察，不做具体投资建议，重点看背后的风险和变量。';
+  return cleaned;
+}
+
+function scriptTextValue(value) {
+  if (typeof value === 'string' || typeof value === 'number') return String(value).trim();
+  if (value && typeof value === 'object') {
+    return String(value.content || value.text || value.hook || value.value || '').trim();
+  }
+  return '';
+}
+
+function normalizeGeneratedScript(raw, index, context={}) {
+  const source = Array.isArray(raw) ? (raw[0] || {}) : raw;
+  const script = source && typeof source === 'object' ? { ...source } : {};
+  script.version = index + 1;
+  script.cover = scriptTextValue(script.cover || script.cover_copy);
+  script.direct_post = sanitizeDouyinComplianceText(scriptTextValue(script.direct_post || script.directPost), 'direct_post', context.topic);
+  const oral = scriptTextValue(script.oral_script || script.oral || script.content || script['口播文案']);
+  script.oral_script = sanitizeDouyinComplianceText(oral, 'oral', context.topic);
+  const hooks = Array.isArray(script.hooks)
+    ? script.hooks
+    : Array.isArray(script.hook_variants) ? script.hook_variants : [];
+  script.hooks = hooks
+    .map(hook => sanitizeDouyinComplianceText(scriptTextValue(hook), 'hook', context.topic))
+    .filter(Boolean)
+    .slice(0, 3);
+  if (!script.hooks.length && script.oral_script) script.hooks = [compactText(script.oral_script, 24)];
+  script.pinned = sanitizeDouyinComplianceText(scriptTextValue(script.pinned || script.pinned_comment), 'pinned', context.topic);
+  script.hook_type = script.hook_type || context.hookType || '';
+  script.structure = script.structure || script.structure_type || context.structure || '';
+  script.source_length = script.source_length || context.sourceLength || 0;
+  script.target_length = script.target_length || context.targetLength || '';
+  return script;
 }
 
 function sourceStatsText(item={}) {
@@ -2439,9 +2495,9 @@ async function runRealPipeline(forceTopic) {
   addLog('CONTENT', 'tag-content', `目标选题：「${winner.topic}」`);
   addLog('CONTENT', 'tag-content', '生成口播初稿（裁缝拼接法）…');
   try {
-    const sys3 = '你是财经短视频口播稿专家，用裁缝拼接法（短视频强钩子+长视频深度内容）写原创初稿。必须先参考用户给出的原视频文案长度约束，再安排开场钩子、问题展开、核心洞察和结尾行动引导；不得把所有口播稿统一写成固定字数。无论选题是否直接涉及财经，必须找到其财经切入点（行业影响/个人理财启示/消费趋势/投资逻辑），以财经视角为普通投资者/打工人提供有价值的洞察。只输出纯文本。';
+    const sys3 = '你是财经短视频口播稿专家，用裁缝拼接法（短视频强钩子+长视频深度内容）写原创初稿。必须先参考用户给出的原视频文案内容和长度约束，再安排开场钩子、问题展开、核心洞察和结尾观点收束；不得把所有口播稿统一写成固定字数。严禁把“留下股票代码/评论区发持仓/我帮你看”这类导流诊断话术写进口播。无论选题是否直接涉及财经，必须找到其财经切入点（行业影响/个人理财启示/消费趋势/投资逻辑），以财经视角为普通投资者/打工人提供有价值的洞察。只输出纯文本。';
     draft = await callLLM(sys3, sourceContent
-      ? `来源素材（请基于此内容进行裁缝拼接洗稿，改写到相似度≤20%）：\n${sourceContent}\n\n选题：${winner.topic}。${oralLengthInstruction(lengthProfile)}风格：理性犀利，口语化，保留信息核心但彻底改写表达。`
+      ? `来源素材（请基于此内容进行裁缝拼接洗稿，改写到相似度≤20%）：\n${sourceContent}\n\n选题：${winner.topic}。${oralLengthInstruction(lengthProfile)}风格：理性犀利，口语化，保留原视频文案的核心信息链但彻底改写表达。禁止带入评论区导流、股票代码诊断、私信加群等话术。`
       : `选题：${winner.topic}。${oralLengthInstruction(lengthProfile)}风格：理性犀利，有信息差，口语化，让普通投资者/从业者有收获。`);
     addLog('CONTENT', 'tag-content', '口播初稿完成，相似度检测 → <strong style="color:#4ade80">通过 ✓</strong>');
     setNodeState('Content', 'done');
@@ -2486,13 +2542,14 @@ async function runRealPipeline(forceTopic) {
   const ANGLES    = ['痛点共鸣', '信息差揭秘', '普通人视角'];
   const STRUCTS   = ['场景带入+情绪推进', '问题前置+层层解答', '结果前置+倒叙还原'];
   const HOOK_TYPES_LIST = ['痛点类', '好奇类', '反差类'];
-  const sys4_base = '你是财经短视频脚本专家，擅长写真人口播稿。根据选题、口播素材和爆款参考，生成1个完整脚本版本。' +
-    `口播稿须完全口语化，像真人在说话，有停顿感、有情绪起伏、接地气；${oralLengthInstruction(lengthProfile)}字符串值内禁止原始换行符。` +
+  const sys4_base = '你是财经短视频脚本专家，擅长写真人口播稿。根据选题、原视频文案、口播素材和爆款参考，生成1个完整脚本版本。必须逐版改写原视频文案的核心信息链，不能脱离原素材泛写。' +
+    `口播稿须完全口语化，像真人在说话，有停顿感、有情绪起伏、接地气；${oralLengthInstruction(lengthProfile)}` +
+    '抖音财经合规：oral_script、direct_post、hooks、pinned均禁止出现留下股票代码/评论区发持仓/我帮你诊断/私信/加群/免费诊股/荐股/关注我等导流或承诺式表述；不要预测具体股票涨跌，不给个股买卖建议。字符串值内禁止原始换行符。' +
     '输出纯JSON对象（不要代码块，不要注释，字符串值内禁止原始换行符）：' +
     '{"version":1,"oral_script":"按原视频文案长度生成的真人化口播稿",' +
     '"cover":"封面≤12汉字用\\\\n换行分两行","direct_post":"直发文字60-80字",' +
     '"hooks":["钩子1≤25字","钩子2≤25字","钩子3≤25字"],' +
-    '"pinned":"置顶评论带emoji","hook_type":"","structure":""}';
+    '"pinned":"开放式讨论问题带emoji，不索要股票代码/持仓/私信","hook_type":"","structure":""}';
   scripts = [];
   for (let idx = 0; idx < 3; idx++) {
     addLog('SCRIPT', 'tag-script', `→ 版本 ${idx+1}（${ANGLES[idx]}·真人化）…`);
@@ -2502,21 +2559,32 @@ async function runRealPipeline(forceTopic) {
         const retryLengthNote = attempt > 0 && lengthProfile?.hasReference
           ? `\n长度复核：上次口播字数不合格，本次 oral_script 必须落在 ${lengthProfile.min}-${lengthProfile.max} 字之间。`
           : '';
-        const u4 = `选题：${winner.topic}\n口播素材（按角度改写）：${draft}\n` +
+        const sourceCopyForPrompt = lengthProfile?.sourceCopy
+          ? `原视频文案（必须作为改写依据，不可照抄）：${compactText(lengthProfile.sourceCopy, 900)}\n`
+          : '';
+        const complianceNote = '抖音财经合规：不要写“留下股票代码帮你看”“评论区发持仓”“私信/加群/免费诊股/荐股/关注我”等导流或诊断话术；置顶评论只提开放性讨论问题，不索要代码、持仓或联系方式。';
+        const u4 = `选题：${winner.topic}\n${sourceCopyForPrompt}口播素材（按角度改写）：${draft}\n` +
           (viralRef ? `爆款参考特征：${viralRef.slice(0, 200)}\n` : '') +
           `版本${idx+1}要求：${ANGLES[idx]}风格，结构：${STRUCTS[idx]}，钩子类型：${HOOK_TYPES_LIST[idx]}。\n` +
           `${oralLengthInstruction(lengthProfile)}\n` +
-          `oral_script须真人化，口语自然，有情绪感染力，围绕"${ANGLES[idx]}"展开。${retryLengthNote}`;
-        const s = await callLLMJson(sys4_base, u4);
-        s.version = idx + 1;
-        s.hook_type = s.hook_type || HOOK_TYPES_LIST[idx];
-        if (!s.oral_script) s.oral_script = draft; // 兜底：LLM 未输出则用 Agent3 初稿
+          `必须匹配结构：封面文案、直发语、口播正文、开头钩子变体、置顶评论。oral_script须真人化，口语自然，有情绪感染力，围绕"${ANGLES[idx]}"展开。${complianceNote}${retryLengthNote}`;
+        const rawScript = await callLLMJson(sys4_base, u4);
+        const s = normalizeGeneratedScript(rawScript, idx, {
+          topic: winner.topic,
+          hookType: HOOK_TYPES_LIST[idx],
+          structure: STRUCTS[idx],
+          sourceLength: lengthProfile?.sourceChars || 0,
+          targetLength: lengthProfile?.hasReference ? `${lengthProfile.min}-${lengthProfile.max}` : '',
+        });
+        if (!s.oral_script) s.oral_script = sanitizeDouyinComplianceText(draft, 'oral', winner.topic);
+        if (!s.cover) s.cover = compactText(winner.topic, 12);
         if (oralLengthOutOfRange(s.oral_script, lengthProfile) && attempt === 0) {
           const actualChars = countOralChars(s.oral_script);
           throw new Error(`口播长度 ${actualChars} 字，不在 ${lengthProfile.min}-${lengthProfile.max} 字范围内`);
         }
-        s.source_length = lengthProfile?.sourceChars || 0;
-        s.target_length = lengthProfile?.hasReference ? `${lengthProfile.min}-${lengthProfile.max}` : '';
+        if (hasDouyinRisk([s.direct_post, s.oral_script, ...(s.hooks || []), s.pinned].join('\n'))) {
+          throw new Error('脚本仍含抖音风险话术');
+        }
         scripts.push(s);
         addLog('SCRIPT', 'tag-script', `版本${idx+1} ✓ | 钩子：${s.hook_type} | 口播${countOralChars(s.oral_script)}字`);
         done = true;
@@ -2537,9 +2605,13 @@ async function runRealPipeline(forceTopic) {
   addLog('REVIEW', 'tag-review', '三重审核启动…');
   review = { compliance: true, oral: true, professional: true, issues: [], suggestions: [] };
   try {
-    const sys5 = '你是金融内容合规审核员。检查脚本是否含违禁词（必涨/稳赚/保本/无风险/稳定收益/内幕等）。输出纯JSON（不要代码块）：{"compliance":true,"oral":true,"professional":true,"issues":[],"suggestions":[]}';
-    const summary = scripts.map((s, i) => `版本${i+1}：${s.hooks?.[0]||''} ${s.direct_post||''}`).join('\n');
+    const sys5 = '你是金融内容合规审核员。检查脚本是否含违禁词（必涨/稳赚/保本/无风险/稳定收益/内幕等），以及抖音财经容易限流的话术：留下股票代码、评论区发持仓、帮你诊断、私信、加群、免费诊股、荐股、关注我。输出纯JSON（不要代码块）：{"compliance":true,"oral":true,"professional":true,"issues":[],"suggestions":[]}';
+    const summary = scripts.map((s, i) => `版本${i+1}\n直发语：${s.direct_post||''}\n口播：${s.oral_script||''}\n钩子：${(s.hooks||[]).join(' / ')}\n置顶评论：${s.pinned||''}`).join('\n\n');
     review = await callLLMJson(sys5, `审核以下脚本：\n${summary}`);
+    if (scripts.some(s => hasDouyinRisk([s.direct_post, s.oral_script, ...(s.hooks || []), s.pinned].join('\n')))) {
+      review.compliance = false;
+      review.issues = [...(review.issues || []), '仍包含抖音财经风险话术，需要重新生成'];
+    }
     addLog('REVIEW', 'tag-review', `■ 合规：${review.compliance!==false?'<strong style="color:#4ade80">通过 ✓</strong>':'<span style="color:#f87171">未通过</span>'}`);
     addLog('REVIEW', 'tag-review', `■ 口播：${review.oral!==false?'<strong style="color:#4ade80">通过 ✓</strong>':'<span style="color:#f87171">未通过</span>'}`);
     addLog('REVIEW', 'tag-review', `■ 专业：${review.professional!==false?'<strong style="color:#4ade80">通过 ✓</strong>':'<span style="color:#f87171">未通过</span>'}`);
