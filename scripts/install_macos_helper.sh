@@ -8,6 +8,7 @@ APP_DIR="$STATE_DIR/app"
 TOOLS_DIR="$STATE_DIR/tools"
 VENV_DIR="$STATE_DIR/venv"
 DOUK_DIR="$TOOLS_DIR/TikTokDownloader"
+REQ_HASH_FILE="$STATE_DIR/requirements.sha256"
 LABEL="com.shipinjiaoben.collector-helper"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG_DIR="$STATE_DIR/logs"
@@ -29,10 +30,31 @@ rsync -a --delete \
   "$SOURCE_DIR/" "$APP_DIR/"
 
 echo "正在准备 Python 虚拟环境..."
-"$SYSTEM_PYTHON" -m venv "$VENV_DIR"
+if [[ ! -x "$VENV_DIR/bin/python" ]]; then
+  "$SYSTEM_PYTHON" -m venv "$VENV_DIR"
+fi
 PYTHON_BIN="$VENV_DIR/bin/python"
-"$PYTHON_BIN" -m pip install --upgrade pip setuptools wheel
-"$PYTHON_BIN" -m pip install -r "$APP_DIR/requirements.txt"
+REQ_HASH="$(shasum -a 256 "$APP_DIR/requirements.txt" | awk '{print $1}')"
+INSTALLED_REQ_HASH="$(cat "$REQ_HASH_FILE" 2>/dev/null || true)"
+DEPS_READY="false"
+if [[ "$REQ_HASH" == "$INSTALLED_REQ_HASH" ]]; then
+  if "$PYTHON_BIN" - <<'PY' >/dev/null 2>&1
+import fastapi
+import httpx
+import uvicorn
+PY
+  then
+    DEPS_READY="true"
+  fi
+fi
+
+if [[ "$DEPS_READY" == "true" ]]; then
+  echo "Python 依赖未变化，跳过重复安装。"
+else
+  "$PYTHON_BIN" -m pip install --upgrade pip setuptools wheel
+  "$PYTHON_BIN" -m pip install -r "$APP_DIR/requirements.txt"
+  echo "$REQ_HASH" > "$REQ_HASH_FILE"
+fi
 
 set_env_value() {
   local key="$1"
@@ -141,6 +163,7 @@ launchctl bootstrap "gui/$(id -u)" "$PLIST"
 launchctl kickstart -k "gui/$(id -u)/$LABEL"
 
 echo "本机采集助手已安装并启动。"
+echo "以后直接打开网页即可复用本机助手，无需重复下载。"
 echo "状态地址：http://127.0.0.1:8765/api/helper/status"
 echo "日志目录：$LOG_DIR"
 echo "助手目录：$APP_DIR"

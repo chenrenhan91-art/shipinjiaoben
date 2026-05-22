@@ -92,6 +92,9 @@ body {
 .config-input:focus { border-color: var(--accent); }
 .config-input::placeholder { color: var(--muted); }
 select.config-input option { background: var(--bg3); }
+.sidebar-full-control { width: 100%; margin-bottom: 8px; }
+.sidebar-link-control { display: block; text-align: center; text-decoration: none; }
+.hot-source-hint { font-size: 11px; color: var(--muted); line-height: 1.6; }
 
 /* ── 右侧内容 ── */
 .content { overflow-y: auto; display: flex; flex-direction: column; }
@@ -354,6 +357,14 @@ select.config-input option { background: var(--bg3); }
 .helper-action:hover { border-color: var(--accent); color: #818cf8; }
 .helper-action.primary:hover { color: #fff; background: #4a58e8; }
 .helper-status-line { font-size: 11px; color: var(--muted); }
+.helper-sidebar-status {
+  font-size: 11px; color: var(--muted); line-height: 1.6;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px;
+  background: rgba(35,39,58,.55); margin-bottom: 8px;
+}
+.helper-sidebar-status.connected { color: #86efac; border-color: rgba(34,197,94,.35); }
+.helper-sidebar-status.update { color: #fbbf24; border-color: rgba(251,191,36,.35); }
+.helper-sidebar-status.missing { color: #fca5a5; border-color: rgba(248,113,113,.35); }
 .cookie-setup-section { display: grid; gap: 10px; }
 .cookie-method-label { font-size: 11px; font-weight: 800; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
 .cookie-browser-row { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -470,12 +481,14 @@ select.config-input option { background: var(--bg3); }
 
     <div class="sidebar-section">
       <div class="sidebar-title">热点源</div>
-      <button class="btn btn-outline" style="width:100%;margin-bottom:8px" onclick="loadPublicHotSources()">↗ 公开热点源（免平台登录）</button>
-      <button class="btn btn-outline" id="douyinHotBtn" style="width:100%;margin-bottom:8px" onclick="loadDouyinHotSources()">抖音热点源（需助手）</button>
-      <button class="btn btn-outline" style="width:100%;margin-bottom:8px" onclick="openDouyinLoginFromHelper()">打开抖音登录</button>
-      <a class="btn btn-outline" style="display:block;width:100%;text-align:center;text-decoration:none;margin-bottom:8px" href="scripts/shipinjiaoben_collector_installer.zip" download>下载 macOS 助手</a>
-      <button class="btn btn-outline" style="width:100%;margin-bottom:8px" onclick="renderHelperGuide()">使用教程</button>
-      <div id="hotSourceHint" style="font-size:11px;color:var(--muted);line-height:1.6">抖音热点源需要本机助手连接；未连接时会显示入口但无法抓取。</div>
+      <button class="btn btn-outline sidebar-full-control" onclick="loadPublicHotSources()">↗ 公开热点源（免平台登录）</button>
+      <button class="btn btn-outline sidebar-full-control" id="douyinHotBtn" onclick="loadDouyinHotSources()">抖音热点源（需助手）</button>
+      <button class="btn btn-outline sidebar-full-control" id="helperCheckBtn" onclick="checkLocalHelperStatus(true)">检测/连接本机助手</button>
+      <button class="btn btn-outline sidebar-full-control" onclick="openDouyinLoginFromHelper()">打开抖音登录</button>
+      <a class="btn btn-outline sidebar-full-control sidebar-link-control" id="helperInstallLink" href="scripts/shipinjiaoben_collector_installer.zip" download>首次安装/更新助手</a>
+      <button class="btn btn-outline sidebar-full-control" onclick="renderHelperGuide()">使用教程</button>
+      <div id="helperQuickStatus" class="helper-sidebar-status">正在检测本机助手；安装一次后会自动复用。</div>
+      <div id="hotSourceHint" class="hot-source-hint">抖音热点源需要本机助手连接；已安装用户点击检测即可复用，无需重复下载。</div>
     </div>
 
   </div>
@@ -608,9 +621,10 @@ const HELPER_BASES = ['http://127.0.0.1:8765', 'http://127.0.0.1:8776'];
 const HELPER_INSTALLER_URL = new URL('scripts/shipinjiaoben_collector_installer.zip', window.location.href).href;
 const HELPER_GUIDE_URL = new URL('docs/helper-guide.md', window.location.href).href;
 const HELPER_INSTALL_COMMAND = `cd ~/Downloads && curl -fL "${HELPER_INSTALLER_URL.replace(/"/g, '\\"')}" -o shipinjiaoben_collector_installer.zip && rm -rf shipinjiaoben_collector_installer && mkdir shipinjiaoben_collector_installer && unzip -o shipinjiaoben_collector_installer.zip -d shipinjiaoben_collector_installer && open shipinjiaoben_collector_installer/Collector_Helper_Installer.app`;
+const HELPER_BASE_STORAGE_KEY = 'shipinjiaoben.helperBase';
 // 与此版本 index.html 匹配的最低 helper 版本；低于此值时提示用户重装
 const REQUIRED_HELPER_VERSION = '20260520';
-let activeHelperBase = '';
+let activeHelperBase = readSavedHelperBase();
 let helperConnected = false;
 let lastHelperStatus = null;
 
@@ -648,6 +662,51 @@ function escapeHtml(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function readSavedHelperBase() {
+  try {
+    const saved = localStorage.getItem(HELPER_BASE_STORAGE_KEY) || '';
+    return HELPER_BASES.includes(saved) ? saved : '';
+  } catch(e) {
+    return '';
+  }
+}
+
+function saveHelperBase(base) {
+  try {
+    if (base) localStorage.setItem(HELPER_BASE_STORAGE_KEY, base);
+  } catch(e) {}
+}
+
+function setSidebarHelperUi(state='checking', message='') {
+  const statusEl = document.getElementById('helperQuickStatus');
+  const checkBtn = document.getElementById('helperCheckBtn');
+  const installLink = document.getElementById('helperInstallLink');
+  const labels = {
+    checking: '正在检测本机助手…',
+    connected: '助手已连接。以后直接打开网页即可复用，不用重复下载。',
+    update: '助手已连接，但版本较旧；需要新版功能时再更新。',
+    missing: '未检测到本机助手。首次安装一次后会常驻并自动启动。',
+  };
+  if (statusEl) {
+    statusEl.className = `helper-sidebar-status ${state}`;
+    statusEl.textContent = message || labels[state] || labels.checking;
+  }
+  if (checkBtn) {
+    checkBtn.disabled = state === 'checking';
+    checkBtn.textContent = state === 'checking'
+      ? '检测中…'
+      : state === 'connected'
+        ? '助手已连接'
+        : state === 'update'
+          ? '检测/更新助手'
+          : '检测/连接本机助手';
+  }
+  if (installLink) {
+    installLink.style.display = state === 'connected' ? 'none' : 'block';
+    installLink.textContent = state === 'update' ? '下载新版助手' : '首次安装/更新助手';
+  }
+}
+
 async function callHelper(path, options={}, timeout=10000) {
   const errors = [];
   let httpError = '';
@@ -666,6 +725,7 @@ async function callHelper(path, options={}, timeout=10000) {
         continue;
       }
       activeHelperBase = base;
+      saveHelperBase(base);
       return await resp.json();
     } catch(e) {
       const timedOut = e.name === 'TimeoutError' || /timed out|timeout/i.test(e.message || '');
@@ -679,16 +739,17 @@ function helperSetupHtml(message='') {
   const detail = message ? `<div class="helper-status-line" style="color:#fbbf24">${escapeHtml(message)}</div>` : '';
   return `<div class="helper-panel">
     <div>
-      <div class="helper-panel-title">需要本机采集助手</div>
-      <div class="helper-panel-text">这个网页不连接你的云端后端。抖音平台热点源需要本机助手连接后才能抓取；未连接时会显示入口但不会执行采集。</div>
+      <div class="helper-panel-title">连接本机采集助手</div>
+      <div class="helper-panel-text">如果已经安装过助手，直接检测即可继续使用；不需要每次重新下载。首次安装会把助手放到用户目录，并注册为登录后自动启动的本机服务。</div>
     </div>
     ${detail}
     <div class="helper-actions">
-      <a class="helper-action primary" href="${HELPER_INSTALLER_URL}" download>下载 macOS 助手</a>
+      <button class="helper-action primary" onclick="checkLocalHelperStatus(true)">检测/连接已安装助手</button>
+      <a class="helper-action" href="${HELPER_INSTALLER_URL}" download>首次安装/更新助手</a>
       <button class="helper-action" onclick="copyHelperInstallCommand()">复制安装命令</button>
       <button class="helper-action" onclick="renderHelperGuide()">使用教程</button>
     </div>
-    <div class="helper-panel-text">下载后解压并打开 Collector_Helper_Installer.app。安装完成后回到网页点击“抖音热点源”，页面会自动检查助手连接状态。抖音作品级素材需要用户在本机完成平台登录。</div>
+    <div class="helper-panel-text">首次安装后回到网页点击“检测/连接本机助手”或“抖音热点源”。抖音作品级素材仍需要在本机完成平台登录态配置。</div>
   </div>`;
 }
 
@@ -725,17 +786,18 @@ function renderHelperGuide() {
   document.getElementById('outputContent').innerHTML = `<div class="helper-panel">
     <div>
       <div class="helper-panel-title">本机采集助手使用教程</div>
-      <div class="helper-panel-text">按下面步骤完成安装后，网页会调用用户自己电脑上的本机助手抓取抖音平台热点源。</div>
+      <div class="helper-panel-text">助手只需要首次安装一次。安装后会常驻在用户自己的电脑上，网页之后通过 127.0.0.1 自动连接和复用。</div>
     </div>
     <div class="helper-steps">
-      <div class="helper-step"><span class="helper-step-num">1</span><div><div class="helper-step-title">下载并解压助手</div><div class="helper-step-text">点击「下载 macOS 助手」，解压 shipinjiaoben_collector_installer.zip。</div></div></div>
-      <div class="helper-step"><span class="helper-step-num">2</span><div><div class="helper-step-title">打开安装器</div><div class="helper-step-text">打开 Collector_Helper_Installer.app。如果 macOS 拦截，在「系统设置 > 隐私与安全性」里允许打开。</div></div></div>
-      <div class="helper-step"><span class="helper-step-num">3</span><div><div class="helper-step-title">回到网页</div><div class="helper-step-text">安装完成后回到网页。页面会自动检查助手连接状态；点击「抖音热点源」时也会再次检查。</div></div></div>
-      <div class="helper-step"><span class="helper-step-num">4</span><div><div class="helper-step-title">抓取抖音热点源</div><div class="helper-step-text">点击「抖音热点源（需助手）」，查看本机助手是否已连接、抖音采集服务是否可用，以及抓到的作品卡片。</div></div></div>
+      <div class="helper-step"><span class="helper-step-num">1</span><div><div class="helper-step-title">首次安装或更新</div><div class="helper-step-text">点击「首次安装/更新助手」，解压后打开 Collector_Helper_Installer.app。</div></div></div>
+      <div class="helper-step"><span class="helper-step-num">2</span><div><div class="helper-step-title">允许安装器运行</div><div class="helper-step-text">如果 macOS 拦截，在「系统设置 > 隐私与安全性」里允许打开。安装器会注册登录后自动启动。</div></div></div>
+      <div class="helper-step"><span class="helper-step-num">3</span><div><div class="helper-step-title">连接已安装助手</div><div class="helper-step-text">回到网页点击「检测/连接本机助手」。之后再次打开网页会优先复用本机助手，不需要重复下载。</div></div></div>
+      <div class="helper-step"><span class="helper-step-num">4</span><div><div class="helper-step-title">抓取抖音热点源</div><div class="helper-step-text">点击「抖音热点源」，输入关键词后抓取。页面会自动启动本机抖音采集服务。</div></div></div>
       <div class="helper-step"><span class="helper-step-num">5</span><div><div class="helper-step-title">配置作品级采集</div><div class="helper-step-text">需要抖音/小红书作品详情、点赞、评论、文案时，先在本机完成平台登录态配置。</div></div></div>
     </div>
     <div class="helper-actions">
-      <a class="helper-action primary" href="${HELPER_INSTALLER_URL}" download>下载 macOS 助手</a>
+      <button class="helper-action primary" onclick="checkLocalHelperStatus(true)">检测/连接本机助手</button>
+      <a class="helper-action" href="${HELPER_INSTALLER_URL}" download>首次安装/更新助手</a>
       <button class="helper-action" onclick="copyHelperInstallCommand()">复制安装命令</button>
       <a class="helper-action" href="${HELPER_GUIDE_URL}" target="_blank" rel="noopener noreferrer">打开完整文档</a>
     </div>
@@ -762,6 +824,7 @@ async function copyHelperInstallCommand() {
 }
 
 async function checkLocalHelperStatus(showPanel=false) {
+  setSidebarHelperUi('checking');
   try {
     const status = await callHelper('/api/helper/status', {}, 8000);
     helperConnected = true;
@@ -772,6 +835,9 @@ async function checkLocalHelperStatus(showPanel=false) {
     // 版本检测：若助手版本落后于页面要求版本，提示用户重装
     const helperVer = status.version || '';
     const needsUpdate = helperVer && helperVer < REQUIRED_HELPER_VERSION;
+    setSidebarHelperUi(needsUpdate ? 'update' : 'connected', needsUpdate
+      ? `助手已连接，但版本 ${helperVer} 低于 ${REQUIRED_HELPER_VERSION}。需要新版功能时再更新。`
+      : `助手已连接：${activeHelperBase}。安装一次后可长期复用。`);
     if (needsUpdate) {
       addLog('SYS', 'tag-warn', `⚠ 助手版本 ${helperVer} 已过期（当前需 ${REQUIRED_HELPER_VERSION}），建议重装助手以获得最新功能`);
     }
@@ -800,7 +866,7 @@ async function checkLocalHelperStatus(showPanel=false) {
           <button class="helper-action primary" onclick="loadDouyinHotSources()">抓取抖音热点源</button>
           <button class="helper-action" onclick="loadPublicHotSources()">查看公开热点源</button>
           <button class="helper-action" onclick="openDouyinLoginFromHelper()">打开抖音登录</button>
-          ${needsUpdate ? `<a class="helper-action" href="${HELPER_INSTALLER_URL}" download>重装新版助手</a>` : ''}
+          ${needsUpdate ? `<a class="helper-action" href="${HELPER_INSTALLER_URL}" download>下载新版助手</a>` : ''}
           <button class="helper-action" onclick="renderHelperGuide()">使用教程</button>
         </div>
       </div>`;
@@ -809,8 +875,9 @@ async function checkLocalHelperStatus(showPanel=false) {
   } catch(e) {
     helperConnected = false;
     lastHelperStatus = null;
+    setSidebarHelperUi('missing', '未检测到本机助手。已安装用户可稍后重试；首次使用请安装一次。');
     updateDouyinHotButton(null);
-    document.getElementById('hotSourceHint').textContent = '未连接本机助手：抖音热点源入口会显示，但无法抓取。';
+    document.getElementById('hotSourceHint').textContent = '未连接本机助手：已安装用户点击检测重试；首次使用只需安装一次。';
     document.getElementById('badgeLive').textContent = '● 等待助手';
     if (showPanel) renderHelperSetupPanel(e.message);
     return null;
@@ -1832,7 +1899,8 @@ function renderDouyinHelperBlocked(message='') {
         <div class="helper-panel-text">抖音平台内容不是公开免登录源，必须先让网页连接到用户电脑上的本机助手。当前状态：${detail}</div>
       </div>
       <div class="helper-actions">
-        <a class="helper-action primary" href="${HELPER_INSTALLER_URL}" download>下载 macOS 助手</a>
+        <button class="helper-action primary" onclick="checkLocalHelperStatus(true)">检测/连接已安装助手</button>
+        <a class="helper-action" href="${HELPER_INSTALLER_URL}" download>首次安装/更新助手</a>
         <button class="helper-action" onclick="openDouyinLoginFromHelper()">打开抖音登录</button>
         <button class="helper-action" onclick="renderHelperGuide()">使用教程</button>
       </div>
@@ -2051,8 +2119,15 @@ async function loadPublicHotSources() {
 }
 
 async function loadDouyinHotSources() {
+  addLog('HOT', 'tag-hot', '正在检测本机助手连接状态…');
+  const status = await checkLocalHelperStatus(false);
+  if (!status) {
+    renderHelperSetupPanel('未检测到本机助手。如果已经安装过，请点击检测重试；首次使用只需安装一次。');
+    addLog('HOT', 'tag-hot', '<span style="color:#fbbf24">抖音热点源需要本机助手，当前未连接。</span>');
+    return;
+  }
   renderDouyinKeywordPrompt();
-  addLog('HOT', 'tag-hot', '已打开抖音热点关键词面板，等待输入后抓取…');
+  addLog('HOT', 'tag-hot', '本机助手已连接，已打开抖音热点关键词面板…');
 }
 
 async function runDouyinHotSearch() {
