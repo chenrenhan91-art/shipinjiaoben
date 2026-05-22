@@ -20,21 +20,37 @@ def get_client() -> AsyncOpenAI:
     return _client
 
 
-def _is_quota_exhausted(exc: Exception) -> bool:
-    """判断是否为百炼免费额度耗尽错误（AllocationQuota.FreeTierOnly）"""
-    s = str(exc)
-    return (
-        "AllocationQuota.FreeTierOnly" in s
-        or "Arrearage" in s
-        or "InsufficientBalance" in s
+def _is_auth_error(exc: Exception) -> bool:
+    """API Key 无效类错误不应继续切换模型。"""
+    status_code = getattr(exc, "status_code", None)
+    text = str(exc)
+    return status_code == 401 or any(
+        marker in text
+        for marker in ("InvalidApiKey", "Invalid API key", "Unauthorized", "Authentication", "NoApiKey")
     )
+
+
+def _is_switchable_model_error(exc: Exception) -> bool:
+    """判断是否可通过切换百炼模型继续重试。"""
+    if _is_auth_error(exc):
+        return False
+    status_code = getattr(exc, "status_code", None)
+    text = str(exc)
+    markers = (
+        "AllocationQuota", "FreeTier", "quota", "Arrearage", "InsufficientBalance",
+        "RateLimit", "TooManyRequests", "Throttl", "ModelNotFound", "ModelUnavailable",
+        "InvalidModel", "model not found", "model not exist", "model not available",
+        "unsupported", "not support", "AccessDenied", "NoPermission", "PermissionDenied",
+        "Forbidden",
+    )
+    return status_code == 429 or any(marker.lower() in text.lower() for marker in markers)
 
 
 async def chat(system: str, user: str, json_mode: bool = False, retries: int = 3) -> str:
     """
     向 LLM 发送请求并返回文本。
     json_mode=True 时强制 JSON 输出（需模型支持）。
-    免费额度耗尽（AllocationQuota.FreeTierOnly）时自动切换 fallback 模型。
+    免费额度耗尽、限流或模型未开通时自动切换 fallback 模型。
     """
     global _model_idx
     models = config.llm_fallback_models or [config.model]
@@ -61,8 +77,8 @@ async def chat(system: str, user: str, json_mode: bool = False, retries: int = 3
                     print(f"[LLM] 已切换到模型: {model}")
                 return resp.choices[0].message.content or ""
             except Exception as exc:
-                if _is_quota_exhausted(exc):
-                    print(f"[LLM] {model} 免费额度已耗尽，切换下一个模型…")
+                if _is_switchable_model_error(exc):
+                    print(f"[LLM] {model} 额度/权限/限流不可用，切换下一个模型…")
                     _model_idx = max(_model_idx, mi + 1)
                     quota_exhausted = True
                     break
@@ -75,8 +91,8 @@ async def chat(system: str, user: str, json_mode: bool = False, retries: int = 3
             break
 
     raise RuntimeError(
-        f"所有模型({', '.join(models)})的免费额度均已耗尽或调用失败，"
-        "请充值或更换 API Key"
+        f"所有模型({', '.join(models)})均不可用，"
+        "请检查 API Key 权限、免费额度或余额"
     )
 
 

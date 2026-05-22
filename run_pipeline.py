@@ -13,7 +13,11 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 API_KEY  = os.getenv("DASHSCOPE_API_KEY", "")   # 请设置环境变量 DASHSCOPE_API_KEY
 BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-MODEL    = "deepseek-v4-flash"
+MODELS   = [m.strip() for m in os.getenv(
+    "LLM_FALLBACK_MODELS",
+    "qwen3.6-plus,qwen3.6-flash,qwen3.5-plus,qwen3.5-flash,qwen-plus,qwen-turbo"
+).split(",") if m.strip()]
+_model_idx = 0
 TOPIC    = "腾讯辟谣AI一号位即将离职"   # 今日热点（2026-05-15 头条热度 3479万）
 TODAY    = "2026年5月15日"
 
@@ -24,22 +28,57 @@ def hr(title=""):
     else:
         print(line)
 
+def is_switchable_llm_error(status_code, text):
+    if status_code == 401 or re.search(r"InvalidApiKey|Invalid API key|Unauthorized|Authentication|NoApiKey", text, re.I):
+        return False
+    return status_code == 429 or bool(re.search(
+        r"AllocationQuota|FreeTier|quota|Arrearage|InsufficientBalance|RateLimit|TooManyRequests|Throttl|"
+        r"ModelNotFound|ModelUnavailable|InvalidModel|model[^\n]*(not found|not exist|not available|unsupported|not support)|"
+        r"AccessDenied|NoPermission|PermissionDenied|Forbidden",
+        text,
+        re.I,
+    ))
+
 def call_llm(sys_prompt, user_prompt, max_tokens=3000):
+    global _model_idx
     hr()
     print(f"[API] {user_prompt[:60]}…")
-    resp = requests.post(
-        f"{BASE_URL}/chat/completions",
-        headers={"Content-Type": "application/json",
-                 "Authorization": f"Bearer {API_KEY}"},
-        json={"model": MODEL,
-              "messages": [{"role": "system", "content": sys_prompt},
-                           {"role": "user",   "content": user_prompt}],
-              "temperature": 0.85, "max_tokens": max_tokens},
-        timeout=90,
-        verify=False
-    )
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
+    last_error = ""
+    for mi in range(_model_idx, len(MODELS)):
+        model = MODELS[mi]
+        resp = requests.post(
+            f"{BASE_URL}/chat/completions",
+            headers={"Content-Type": "application/json",
+                     "Authorization": f"Bearer {API_KEY}"},
+            json={"model": model,
+                  "messages": [{"role": "system", "content": sys_prompt},
+                               {"role": "user",   "content": user_prompt}],
+                  "temperature": 0.85, "max_tokens": max_tokens},
+            timeout=90,
+            verify=False
+        )
+        body = resp.text
+        if not resp.ok:
+            last_error = f"{model} HTTP {resp.status_code}: {body[:160]}"
+            if is_switchable_llm_error(resp.status_code, body):
+                print(f"⚠ 模型 {model} 额度/权限/限流不可用，切换下一个…")
+                _model_idx = max(_model_idx, mi + 1)
+                continue
+            resp.raise_for_status()
+        data = resp.json()
+        if data.get("error"):
+            err_text = json.dumps(data["error"], ensure_ascii=False)
+            last_error = f"{model}: {err_text[:160]}"
+            if is_switchable_llm_error(resp.status_code, err_text):
+                print(f"⚠ 模型 {model} 额度/权限/限流不可用，切换下一个…")
+                _model_idx = max(_model_idx, mi + 1)
+                continue
+            raise RuntimeError(last_error)
+        if mi != _model_idx:
+            _model_idx = mi
+            print(f"✓ 已切换到模型：{model}")
+        return data["choices"][0]["message"]["content"]
+    raise RuntimeError(f"所有模型({', '.join(MODELS)})均不可用：{last_error}")
 
 def call_llm_json(sys_prompt, user_prompt, max_tokens=3000):
     text = call_llm(sys_prompt, user_prompt, max_tokens)

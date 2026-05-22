@@ -12,11 +12,11 @@ class Config:
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     openai_base_url: str = field(default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"))
     model: str = field(default_factory=lambda: os.getenv("LLM_MODEL", "qwen3.6-plus"))
-    # 额度耗尽自动切换顺序（AllocationQuota.FreeTierOnly 时依次尝试）
+    # 额度耗尽/限流/模型未开通时自动切换顺序
     llm_fallback_models: List[str] = field(default_factory=lambda: [
         m.strip() for m in os.getenv(
             "LLM_FALLBACK_MODELS",
-            "qwen3.6-plus,qwen-plus,qwen3.6-flash,qwen-turbo"
+            "qwen3.6-plus,qwen3.6-flash,qwen3.5-plus,qwen3.5-flash,qwen-plus,qwen-turbo"
         ).split(",") if m.strip()
     ])
 
