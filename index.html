@@ -1060,7 +1060,7 @@ function buildOralLengthProfile(sources=[], sourceContent='', referenceScript=''
   const sourceChars = countOralChars(sourceCopy);
   const hasReference = sourceChars >= 30;
   const target = hasReference ? sourceChars : 240;
-  const lowerRatio = target < 80 ? 0.85 : 0.9;
+  const lowerRatio = target < 80 ? 0.65 : 0.9;
   const upperRatio = target < 80 ? 1.25 : 1.15;
   const min = Math.max(20, Math.round(target * lowerRatio));
   const max = Math.max(min + 10, Math.round(target * upperRatio));
@@ -2626,7 +2626,7 @@ async function runRealPipeline(forceTopic) {
         if (!s.cover) s.cover = compactText(winner.topic, 12);
         if (oralLengthOutOfRange(s.oral_script, lengthProfile) && attempt === 0) {
           const actualChars = countOralChars(s.oral_script);
-          throw new Error(`口播长度 ${actualChars} 字，不在 ${lengthProfile.min}-${lengthProfile.max} 字范围内`);
+          throw new Error(`__LENGTH__口播 ${actualChars} 字，目标 ${lengthProfile.min}-${lengthProfile.max} 字，自动补充`);
         }
         if (hasDouyinRisk([s.direct_post, s.oral_script, ...(s.hooks || []), s.pinned].join('\n'))) {
           throw new Error('脚本仍含抖音风险话术');
@@ -2635,8 +2635,13 @@ async function runRealPipeline(forceTopic) {
         addLog('SCRIPT', 'tag-script', `版本${idx+1} ✓ | 钩子：${s.hook_type} | 口播${countOralChars(s.oral_script)}字`);
         done = true;
       } catch(e) {
-        const reason = escapeHtml(String(e?.message || e || '未知错误').slice(0, 90));
-        if (attempt === 0) addLog('SCRIPT', 'tag-script', `版本${idx+1} 首次失败：${reason}，重试…`);
+        const rawMsg = String(e?.message || e || '未知错误');
+        const isLengthTune = rawMsg.startsWith('__LENGTH__');
+        const reason = escapeHtml(rawMsg.replace(/^__LENGTH__/, '').slice(0, 90));
+        if (attempt === 0) {
+          if (isLengthTune) addLog('SCRIPT', 'tag-script', `版本${idx+1} 口播字数优化中（${reason}）…`);
+          else addLog('SCRIPT', 'tag-script', `版本${idx+1} 首次失败：${reason}，重试…`);
+        }
         else {
           const fallback = buildFallbackScriptVersion(idx, {
             topic: winner.topic,
