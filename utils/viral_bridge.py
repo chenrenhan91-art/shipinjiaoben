@@ -43,6 +43,28 @@ DOUYIN_MAX_VIDEO_AGE_DAYS = 21
 DOUYIN_DIRECT_SEARCH_MAX_TERMS = 2
 DOUYIN_INDEX_FALLBACK_MAX_SECONDS = 60
 URL_RE = re.compile(r"https?://[^\s'\"<>，。；、）)】」]+", re.I)
+DOUYIN_TERM_EXPANSIONS = {
+    "财经": ["财经", "金融", "股市", "A股", "基金", "理财"],
+    "金融": ["金融", "财经", "银行", "基金", "证券", "理财"],
+    "股市": ["股市", "A股", "股票", "指数", "沪指", "创业板"],
+    "A股": ["A股", "股市", "股票", "沪指", "创业板", "涨停"],
+    "黄金": ["黄金", "金价", "国际金价", "黄金投资"],
+    "AI": ["AI", "人工智能", "大模型", "算力", "芯片", "英伟达"],
+    "人工智能": ["人工智能", "AI", "大模型", "算力", "芯片"],
+    "芯片": ["芯片", "半导体", "国产芯片", "英伟达", "台积电"],
+    "新能源": ["新能源", "电动车", "电池", "光伏", "储能"],
+    "房产": ["房产", "楼市", "房价", "房贷", "地产"],
+}
+DOUYIN_SEARCH_KEY_TERMS = [
+    "上海黄金交易所", "黄金交易所", "证券交易所", "北京证券交易所", "深圳证券交易所", "上海证券交易所",
+    "美联储", "央行", "证监会", "中国人民银行", "财政部", "商务部",
+    "A股", "港股", "美股", "股市", "股票", "基金", "证券", "券商", "银行", "保险", "理财",
+    "黄金", "金价", "油价", "原油", "汇率", "人民币", "美元", "债券", "国债", "期货",
+    "AI", "人工智能", "大模型", "算力", "芯片", "半导体", "英伟达", "特斯拉", "OpenAI", "DeepSeek",
+    "新能源", "电池", "光伏", "储能", "机器人", "自动驾驶", "电动车", "低空经济", "商业航天",
+    "成交", "上涨", "下跌", "收涨", "收跌", "涨停", "跌停", "融资", "回购", "并购", "增持", "减持",
+]
+DOUYIN_BROAD_KEYWORDS = set(DOUYIN_KEYWORD_GROUPS.keys()) | {"财经", "金融", "股市", "A股", "AI", "房产", "职场"}
 
 
 def _extract_first_url(value: str) -> str:
@@ -325,19 +347,128 @@ def _normalize_hot_word(raw: dict[str, Any], source: str, position: int) -> dict
     }
 
 
+def _dedupe_terms(terms: list[str], limit: int = 16) -> list[str]:
+    cleaned: list[str] = []
+    for term in terms:
+        term = clean_text(str(term or "")).strip("#.,;:!?，。；：！？）)]】」\"'")
+        if term and term not in cleaned:
+            cleaned.append(term)
+        if len(cleaned) >= limit:
+            break
+    return cleaned
+
+
+def _strip_time_prefix(term: str) -> str:
+    return re.sub(r"^(?:\d{1,2}月|\d{1,2}日|\d{4}年|今年|今日|今天|本周|本月|月|日)+", "", term).strip()
+
+
+def _specific_keyword_terms(keyword: str) -> list[str]:
+    text = clean_text(keyword)
+    if not text:
+        return []
+    terms: list[str] = []
+    lower_text = text.lower()
+    for term in sorted(DOUYIN_SEARCH_KEY_TERMS, key=len, reverse=True):
+        if term in text or term.lower() in lower_text:
+            terms.append(term)
+
+    for match in re.findall(r"[\u4e00-\u9fffA-Za-z0-9]{2,18}(?:交易所|证券|银行|基金|指数|期货|集团|公司|股份|科技)", text):
+        match = _strip_time_prefix(match)
+        if len(match) >= 3:
+            terms.append(match)
+
+    entity_terms = [term for term in terms if len(term) >= 4 or any(suffix in term for suffix in ("交易所", "证券", "银行", "基金", "集团", "公司"))]
+    key_terms = [term for term in terms if 2 <= len(term) <= 6]
+    for entity in entity_terms[:4]:
+        for term in key_terms[:6]:
+            if term != entity and term not in entity and entity not in term:
+                terms.append(f"{entity} {term}")
+    for first in key_terms[:5]:
+        for second in key_terms[:5]:
+            if first != second:
+                terms.append(f"{first} {second}")
+    return _dedupe_terms(terms, 14)
+
+
+def _keyword_is_broad(keyword: str) -> bool:
+    keyword = clean_text(keyword)
+    return keyword in DOUYIN_BROAD_KEYWORDS
+
+
 def _keyword_terms(keyword: str) -> list[str]:
     keyword = clean_text(keyword)
     if not keyword:
         return []
-    terms = [keyword]
     keyword_lower = keyword.lower()
-    for group, values in DOUYIN_KEYWORD_GROUPS.items():
-        values_lower = [value.lower() for value in values]
-        if keyword == group or keyword_lower == group.lower() or keyword_lower in values_lower:
-            terms.extend(values)
-        elif any(value in keyword or value.lower() in keyword_lower for value in values):
-            terms.extend(values)
-    return [term for term in dict.fromkeys(clean_text(term) for term in terms) if term]
+    terms = [keyword]
+    specific_terms = _specific_keyword_terms(keyword)
+
+    if keyword in DOUYIN_KEYWORD_GROUPS or keyword_lower in {group.lower() for group in DOUYIN_KEYWORD_GROUPS}:
+        for group, values in DOUYIN_KEYWORD_GROUPS.items():
+            if keyword == group or keyword_lower == group.lower():
+                terms.extend(values)
+                break
+    elif keyword in DOUYIN_TERM_EXPANSIONS:
+        terms.extend(DOUYIN_TERM_EXPANSIONS[keyword])
+    elif _keyword_is_broad(keyword):
+        terms.extend(DOUYIN_TERM_EXPANSIONS.get(keyword, []))
+    else:
+        terms.extend(specific_terms)
+
+    if specific_terms:
+        terms.extend(specific_terms)
+    return _dedupe_terms(terms, 16)
+
+
+def _video_keyword_relevance(item: dict[str, Any], keyword: str, terms: list[str]) -> int:
+    keyword = clean_text(keyword)
+    text = clean_text(" ".join([
+        str(item.get("title") or ""),
+        str(item.get("script") or ""),
+        " ".join(str(comment) for comment in item.get("comments_hot") or []),
+    ]))
+    if not keyword or not text:
+        return 0
+    text_lower = text.lower()
+    compact_text = re.sub(r"\s+", "", text)
+    score = 0
+    matched_terms: list[str] = []
+    if keyword in text or keyword.lower() in text_lower:
+        score += 80
+        matched_terms.append(keyword)
+    compact_keyword = re.sub(r"\s+", "", keyword)
+    if len(compact_keyword) >= 6 and compact_keyword in compact_text:
+        score += 60
+        matched_terms.append(compact_keyword)
+    for term in _dedupe_terms(terms, 20):
+        if len(term) < 2:
+            continue
+        term_lower = term.lower()
+        compact_term = re.sub(r"\s+", "", term)
+        if term in text or term_lower in text_lower or len(compact_term) >= 4 and compact_term in compact_text:
+            score += 24 if len(term) >= 5 else 14
+            matched_terms.append(term)
+    for number in re.findall(r"\d+(?:\.\d+)?", keyword):
+        if len(number) >= 2 and number in text:
+            score += 12
+            matched_terms.append(number)
+    if matched_terms:
+        item["matched_terms"] = _dedupe_terms(matched_terms, 8)
+    return score
+
+
+def _video_matches_keyword(item: dict[str, Any], keyword: str, terms: list[str]) -> bool:
+    if not clean_text(keyword) or _keyword_is_broad(keyword):
+        return True
+    item["keyword_relevance"] = _video_keyword_relevance(item, keyword, terms)
+    cleaned_keyword = clean_text(keyword)
+    if len(cleaned_keyword) >= 10 or re.search(r"\d", cleaned_keyword):
+        required = 36
+    elif len(cleaned_keyword) >= 4:
+        required = 24
+    else:
+        required = 14
+    return item["keyword_relevance"] >= required
 
 
 def _hot_word_relevance(item: dict[str, Any], keyword: str) -> int:
@@ -533,7 +664,7 @@ async def _search_indexed_douyin_candidates(term: str, limit: int, status: dict[
     return []
 
 
-async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, status: dict[str, Any], max_seconds: int = DOUYIN_INDEX_FALLBACK_MAX_SECONDS) -> list[dict[str, Any]]:
+async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, status: dict[str, Any], keyword: str = "", max_seconds: int = DOUYIN_INDEX_FALLBACK_MAX_SECONDS) -> list[dict[str, Any]]:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + max_seconds
     pending_terms = [term for term in dict.fromkeys(terms) if term]
@@ -544,6 +675,7 @@ async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, s
     seen_ids: set[str] = set()
     filtered_low_heat = 0
     filtered_old = 0
+    filtered_relevance = 0
     detail_checks = 0
     max_terms = max(18, limit * 4)
     max_detail_checks = max(30, limit * 5)
@@ -600,6 +732,9 @@ async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, s
             item["search_term"] = base["search_term"]
             item["core_score"] = _core_video_score(item)
             item["detail_resolved"] = bool(detail)
+            if not _video_matches_keyword(item, keyword or term, terms):
+                filtered_relevance += 1
+                continue
             related_tags = _extract_hashtag_terms(item.get("title", ""), item.get("script", ""), candidate.get("script", ""))
             for tag in related_tags:
                 if tag not in term_states and tag not in pending_terms and len(pending_terms) + len(searched_terms) < max_terms:
@@ -619,10 +754,10 @@ async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, s
             if len(_dedupe(items, limit)) >= limit:
                 break
 
-    items.sort(key=lambda item: (item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
+    items.sort(key=lambda item: (item.get("keyword_relevance") or 0, item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
     result = _dedupe(items, limit)
     if not result and best_effort_items:
-        best_effort_items.sort(key=lambda item: (item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
+        best_effort_items.sort(key=lambda item: (item.get("keyword_relevance") or 0, item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
         result = _dedupe(best_effort_items, limit)
         status["douyin_index_fallback"] = "ok:best_effort"
     status["douyin_index_term_status"] = term_states
@@ -633,6 +768,7 @@ async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, s
     status["douyin_video_max_age_days"] = DOUYIN_MAX_VIDEO_AGE_DAYS
     status["douyin_video_filtered_low_heat"] = filtered_low_heat
     status["douyin_video_filtered_old"] = filtered_old
+    status["douyin_video_filtered_relevance"] = filtered_relevance
     return result
 
 
@@ -644,6 +780,7 @@ async def _search_douyin_videos_by_terms(keyword: str, limit: int, status: dict[
     found: list[dict[str, Any]] = []
     best_effort_direct: list[dict[str, Any]] = []
     term_states: dict[str, str] = {}
+    filtered_relevance = 0
     direct_search_status = str(status.get("douyin") or "")
     direct_terms = [] if direct_search_status.startswith("unavailable") else terms[:DOUYIN_DIRECT_SEARCH_MAX_TERMS]
     if not direct_terms and direct_search_status:
@@ -660,6 +797,9 @@ async def _search_douyin_videos_by_terms(keyword: str, limit: int, status: dict[
             item["search_term"] = term
             item["core_score"] = _core_video_score(item)
         for item in term_items:
+            if not _video_matches_keyword(item, keyword, terms):
+                filtered_relevance += 1
+                continue
             if _video_item_passes_constraints(item):
                 found.append(item)
             elif _video_item_passes_heat(item):
@@ -667,17 +807,18 @@ async def _search_douyin_videos_by_terms(keyword: str, limit: int, status: dict[
         if len(_dedupe(found, limit * 2)) >= limit * 2:
             break
     unique = _dedupe(found, limit * 3)
-    unique.sort(key=lambda item: (item.get("core_score") or _core_video_score(item), item.get("likes") or 0), reverse=True)
+    unique.sort(key=lambda item: (item.get("keyword_relevance") or 0, item.get("core_score") or _core_video_score(item), item.get("likes") or 0), reverse=True)
     result = _dedupe(unique, limit)
     if len(result) < limit:
-        indexed_items = await _search_indexed_douyin_videos_by_terms(terms, limit, status)
+        indexed_items = await _search_indexed_douyin_videos_by_terms(terms, limit, status, keyword=keyword)
         result = _dedupe([*result, *indexed_items], limit)
     if not result and best_effort_direct:
-        best_effort_direct.sort(key=lambda item: (item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
+        best_effort_direct.sort(key=lambda item: (item.get("keyword_relevance") or 0, item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
         result = _dedupe(best_effort_direct, limit)
         status["douyin_video_fallback"] = "ok:best_effort_direct"
     status["douyin_video_terms"] = terms
     status["douyin_video_term_status"] = term_states
+    status["douyin_video_filtered_relevance"] = filtered_relevance + int(status.get("douyin_video_filtered_relevance") or 0)
     if "douyin_video_fallback" not in status:
         status["douyin_video_fallback"] = "ok" if result else "empty"
     status["douyin_video_min_engagement"] = DOUYIN_MIN_ENGAGEMENT_SCORE

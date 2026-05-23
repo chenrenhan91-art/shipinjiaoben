@@ -2461,7 +2461,7 @@ async function runDouyinKeywordVideoSearch() {
       searchLinks,
     });
     addLog('HOT', 'tag-hot', items.length
-      ? `关键词相关热点视频搜索完成：${items.length} 条，已按核心数据排序 ✓`
+      ? `关键词相关热点视频搜索完成：${items.length} 条，已按关键词相关性和核心数据排序 ✓`
       : '关键词相关热点视频暂未返回可用作品，已显示接口状态和搜索入口');
   } catch(e) {
     renderDouyinPlatformSources({
