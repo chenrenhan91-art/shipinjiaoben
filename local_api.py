@@ -149,7 +149,7 @@ async def hot_topics(limit: int = 80) -> dict:
         "total": len(limited_topics),
         "raw_total": len(raw_topics),
         "limit": limit,
-        "filter": "finance_only",
+        "filter": "finance_tech_relevant",
         "source_summary": source_summary,
         "topics": [topic.model_dump(mode="json") for topic in limited_topics],
     }

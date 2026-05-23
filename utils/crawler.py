@@ -1,9 +1,10 @@
 """
 热点爬虫工具
 已验证可用数据源（2026-05）：
-        资讯 RSS : 中国新闻网财经、经济观察网、FT中文网
+        资讯 RSS : 36氪、中国新闻网财经、经济观察网、FT中文网
         资讯 API : 第一财经、财联社电报
         资讯 HTML: 东方财富、证券时报、中国人民银行、证监会
+        泛热点榜 : 百度实时热搜、微博实时热搜、今日头条热榜、腾讯新闻热榜
   爆款视频 : 手动导入 JSON（抖音/小红书/视频号暂无公开 API）
 """
 import json
@@ -13,7 +14,7 @@ import feedparser
 import aiohttp
 from datetime import datetime
 from typing import List, Optional
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 from bs4 import BeautifulSoup
 from data_models import HotTopic, ViralVideo
 from utils.text_utils import clean_text
@@ -26,6 +27,11 @@ HEADERS = {
     ),
     "Referer": "https://weibo.com/",
 }
+
+
+def _keyword_url(template: str, keyword: str) -> str:
+    return template.format(keyword=quote(keyword or ""))
+
 
 def _interleave_topic_groups(groups: List[List[HotTopic]]) -> List[HotTopic]:
     topics: List[HotTopic] = []
@@ -40,6 +46,7 @@ def _interleave_topic_groups(groups: List[List[HotTopic]]) -> List[HotTopic]:
 # RSS 金融资讯源（经实测可用）
 # ──────────────────────────────────────────────
 RSS_SOURCES = {
+    "36氪": "https://36kr.com/feed",
     "中国新闻网财经": "https://www.chinanews.com.cn/rss/finance.xml",
     "经济观察网": "https://www.eeo.com.cn/rss.xml",
     "FT中文网": "https://www.ftchinese.com/rss/news",
@@ -162,7 +169,7 @@ async def fetch_yicai_latest() -> List[HotTopic]:
 
 
 async def fetch_cls_telegraph() -> List[HotTopic]:
-    """抓取财联社电报（公开 JSON 接口），后续会再按金融相关性过滤。"""
+    """抓取财联社电报（公开 JSON 接口），后续会再按金融科技相关性过滤。"""
     url = (
         "https://www.cls.cn/nodeapi/updateTelegraphList"
         "?app=CailianpressWeb&category=&lastTime=&last_time=&os=web&rn=50&sv=8.4.6"
@@ -252,6 +259,128 @@ async def fetch_csrc_news() -> List[HotTopic]:
         return []
 
 
+async def fetch_weibo_hot() -> List[HotTopic]:
+    """抓取微博实时热搜，作为金融科技相关性过滤前的候选池。"""
+    url = "https://weibo.com/ajax/side/hotSearch"
+    topics: List[HotTopic] = []
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                data = await resp.json(content_type=None)
+        items = data.get("data", {}).get("realtime", [])
+        for item in items[:40]:
+            word = clean_text(item.get("word", ""))
+            note = clean_text(item.get("note", ""))
+            num = item.get("num", 0)
+            if word:
+                topics.append(HotTopic(
+                    title=word,
+                    source="微博热搜",
+                    url=_keyword_url("https://s.weibo.com/weibo?q={keyword}", word),
+                    summary=note[:200],
+                    heat_score=float(num or 0),
+                    tags=["热搜", "微博"],
+                ))
+    except Exception as exc:
+        print(f"[Crawler] 微博热搜失败: {exc}")
+    return topics
+
+
+async def fetch_baidu_hot() -> List[HotTopic]:
+    """抓取百度实时热搜，作为金融科技相关性过滤前的候选池。"""
+    url = "https://top.baidu.com/api/board?tab=realtime"
+    topics: List[HotTopic] = []
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                data = await resp.json(content_type=None)
+        cards = data.get("data", {}).get("cards", [])
+        items = cards[0].get("content", []) if cards else []
+        for item in items[:40]:
+            title = clean_text(item.get("word", "") or item.get("title", ""))
+            desc = clean_text(item.get("desc", ""))
+            hot_score = float(item.get("hotScore", 0) or 0)
+            url_link = item.get("url", "") or _keyword_url("https://www.baidu.com/s?wd={keyword}", title)
+            if title:
+                topics.append(HotTopic(
+                    title=title,
+                    source="百度热搜",
+                    url=url_link,
+                    summary=desc[:200],
+                    heat_score=hot_score,
+                    tags=["热搜", "百度"],
+                ))
+    except Exception as exc:
+        print(f"[Crawler] 百度热搜失败: {exc}")
+    return topics
+
+
+async def fetch_toutiao_hot() -> List[HotTopic]:
+    """抓取今日头条热榜，作为金融科技相关性过滤前的候选池。"""
+    url = "https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc"
+    topics: List[HotTopic] = []
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                data = await resp.json(content_type=None)
+        items = data.get("data", [])
+        for item in items[:40]:
+            title = clean_text(item.get("Title", ""))
+            label = clean_text(item.get("Label", "") or item.get("LabelDesc", "") or item.get("LabelUrl", ""))
+            hot_score = float(item.get("HotScore", item.get("HotValue", 0)) or 0)
+            cluster_id = item.get("ClusterId") or item.get("ClusterID") or item.get("cluster_id")
+            url_link = (
+                item.get("Url")
+                or item.get("url")
+                or item.get("ArticleUrl")
+                or item.get("OpenUrl")
+                or (f"https://www.toutiao.com/trending/{cluster_id}/" if cluster_id else "")
+                or _keyword_url("https://so.toutiao.com/search?keyword={keyword}", title)
+            )
+            if title:
+                topics.append(HotTopic(
+                    title=title,
+                    source="今日头条热榜",
+                    url=url_link,
+                    summary=label[:200],
+                    heat_score=hot_score,
+                    tags=["热搜", "头条"],
+                ))
+    except Exception as exc:
+        print(f"[Crawler] 今日头条热榜失败: {exc}")
+    return topics
+
+
+async def fetch_tencent_hot() -> List[HotTopic]:
+    """抓取腾讯新闻热榜，作为金融科技相关性过滤前的候选池。"""
+    url = (
+        "https://i.news.qq.com/gw/event/pc_hot_ranking_list"
+        "?startTime=0&compareTime=0&from=0&count=30"
+    )
+    topics: List[HotTopic] = []
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                data = await resp.json(content_type=None)
+        newslist = data.get("idlist", [{}])[0].get("newslist", [])
+        for item in newslist[1:31]:
+            title = clean_text(item.get("title", ""))
+            abstract = clean_text(item.get("abstract", ""))
+            source = item.get("source", "腾讯新闻热榜")
+            link = item.get("url", "")
+            if title:
+                topics.append(HotTopic(
+                    title=title,
+                    source=f"腾讯热榜/{source}",
+                    url=link,
+                    summary=abstract[:200],
+                    tags=["热搜", "腾讯"],
+                ))
+    except Exception as exc:
+        print(f"[Crawler] 腾讯新闻热榜失败: {exc}")
+    return topics
+
+
 def load_viral_videos_from_file(filepath: str) -> List[ViralVideo]:
     """
     从本地 JSON 文件加载爆款视频数据。
@@ -283,7 +412,7 @@ def load_viral_videos_from_file(filepath: str) -> List[ViralVideo]:
 
 
 async def fetch_all_hot_topics() -> List[HotTopic]:
-    """并发聚合公开金融热点来源。"""
+    """并发聚合公开金融/科技/泛热榜候选来源，最终由相关性过滤器收束。"""
     news_task = fetch_financial_news()
     yicai_task = fetch_yicai_latest()
     eastmoney_task = fetch_eastmoney_finance()
@@ -291,13 +420,20 @@ async def fetch_all_hot_topics() -> List[HotTopic]:
     stcn_task = fetch_stcn_finance()
     pbc_task = fetch_pbc_news()
     csrc_task = fetch_csrc_news()
+    baidu_task = fetch_baidu_hot()
+    toutiao_task = fetch_toutiao_hot()
+    tencent_task = fetch_tencent_hot()
+    weibo_task = fetch_weibo_hot()
 
-    news, yicai, eastmoney, cls, stcn, pbc, csrc = await asyncio.gather(
-        news_task, yicai_task, eastmoney_task, cls_task, stcn_task, pbc_task, csrc_task
+    news, yicai, eastmoney, cls, stcn, pbc, csrc, baidu, toutiao, tencent, weibo = await asyncio.gather(
+        news_task, yicai_task, eastmoney_task, cls_task, stcn_task, pbc_task, csrc_task,
+        baidu_task, toutiao_task, tencent_task, weibo_task
     )
 
-    # 只聚合金融垂直/官方公开来源，并穿插各来源，避免前端 limit 截断后只剩少数平台
-    all_topics = _interleave_topic_groups([eastmoney, cls, yicai, news, stcn, pbc, csrc])
+    # 先聚合金融垂直源和泛热点榜，再由 topic_filter 收束为金融科技相关热点
+    all_topics = _interleave_topic_groups([
+        eastmoney, cls, yicai, news, stcn, pbc, csrc, baidu, toutiao, tencent, weibo
+    ])
 
     # 全局去重（标题前15字为 key）
     seen, unique = set(), []

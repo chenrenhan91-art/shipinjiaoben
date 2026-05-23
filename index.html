@@ -480,7 +480,7 @@ select.config-input option { background: var(--bg3); }
 
     <div class="sidebar-section">
       <div class="sidebar-title">热点源</div>
-      <button class="btn btn-outline sidebar-full-control" onclick="loadPublicHotSources()">↗ 公开金融源（免平台登录）</button>
+      <button class="btn btn-outline sidebar-full-control" onclick="loadPublicHotSources()">↗ 公开金融科技源（免平台登录）</button>
       <button class="btn btn-outline sidebar-full-control" id="douyinHotBtn" onclick="loadDouyinHotSources()">抖音热点源（需助手）</button>
       <button class="btn btn-outline sidebar-full-control" onclick="openDouyinLoginFromHelper()">打开抖音登录</button>
       <a class="btn btn-outline sidebar-full-control sidebar-link-control" id="helperInstallLink" href="scripts/shipinjiaoben_collector_installer.zip" download>首次安装/更新助手</a>
@@ -802,7 +802,7 @@ function renderHelperGuide() {
       <button class="helper-action" onclick="copyHelperInstallCommand()">复制安装命令</button>
       <a class="helper-action" href="${HELPER_GUIDE_URL}" target="_blank" rel="noopener noreferrer">打开完整文档</a>
     </div>
-    <div class="helper-panel-text">公开金融源来自第一财经、东方财富、财联社、证券时报、中国人民银行、证监会、中国新闻网财经、经济观察网、FT中文网等；抖音/小红书作品级数据取决于本机采集工具、登录态和平台风控。</div>
+    <div class="helper-panel-text">公开金融科技源来自第一财经、东方财富、财联社、证券时报、中国人民银行、证监会、36氪、百度热搜、头条热榜、腾讯热榜、微博热搜等；系统会只保留金融科技相关内容。抖音/小红书作品级数据取决于本机采集工具、登录态和平台风控。</div>
   </div>`;
 }
 
@@ -859,13 +859,13 @@ async function checkLocalHelperStatus(showPanel=false) {
       document.getElementById('outputContent').innerHTML = `<div class="helper-panel">
         <div>
           <div class="helper-panel-title">本机助手已连接</div>
-          <div class="helper-panel-text">当前端口：${escapeHtml(activeHelperBase)}。抖音平台热点源需要本机助手和抖音登录态；公开金融源可从左侧单独查看。</div>
+          <div class="helper-panel-text">当前端口：${escapeHtml(activeHelperBase)}。抖音平台热点源需要本机助手和抖音登录态；公开金融科技源可从左侧单独查看。</div>
         </div>
         ${updateBanner}
         <div class="helper-status-line">${escapeHtml(douyinReady)} · ${escapeHtml(cookieReady)}</div>
         <div class="helper-actions">
           <button class="helper-action primary" onclick="loadDouyinHotSources()">抓取抖音热点源</button>
-          <button class="helper-action" onclick="loadPublicHotSources()">查看公开金融源</button>
+          <button class="helper-action" onclick="loadPublicHotSources()">查看公开金融科技源</button>
           <button class="helper-action" onclick="openDouyinLoginFromHelper()">打开抖音登录</button>
           ${needsUpdate ? `<a class="helper-action" href="${HELPER_INSTALLER_URL}" download>下载新版助手</a>` : ''}
           <button class="helper-action" onclick="renderHelperGuide()">使用教程</button>
@@ -1704,11 +1704,12 @@ function displayTopicScore(topic) {
 }
 
 const FOCUSED_TOPIC_TERMS = [
-  '财经','金融','股市','股票','A股','港股','美股','基金','债券','期货','外汇','汇率','人民币','美元','黄金','油价','楼市','房价','房贷','利率','降息','加息','央行','美联储','通胀','CPI','PPI','GDP','财政','关税','投资者','投资人','资产配置','理财','保险','银行','券商','上市','IPO','退市','并购','融资','估值','市值','财报','营收','利润','亏损','分红','指数','纳指','道指','标普','费城半导体','半导体指数','证券','证监会','银保','金融市场','资本市场','沪指','深成指','创业板指','科创板','北交所','个股','附股','板块','概念股','国债','可转债','收益率','成交额','贷款','存款','信用卡','理财产品','私募','公募','北向资金','外资','主力资金','净流入','净流出'
+  '经济','财经','金融','股市','股票','A股','港股','美股','基金','债券','期货','外汇','汇率','人民币','美元','黄金','油价','楼市','房价','房贷','利率','降息','加息','央行','美联储','通胀','CPI','PPI','GDP','财政','关税','贸易','出口','消费','投资','投资者','投资人','资产配置','理财','保险','银行','券商','上市','IPO','退市','并购','融资','估值','市值','财报','营收','利润','亏损','分红','指数','纳指','道指','标普','费城半导体','半导体指数','证券','证监会','银保','金融市场','资本市场','沪指','深成指','创业板指','科创板','北交所','个股','附股','板块','概念股','国债','可转债','收益率','成交额','贷款','存款','信用卡','理财产品','私募','公募','北向资金','外资','主力资金','净流入','净流出'
 ];
-const FOCUSED_CONTEXT_TERMS = ['芯片','半导体','AI','人工智能','大模型','算力','机器人','自动驾驶','新能源','电池','光伏','储能','医药','创新药','游戏','电商','互联网','平台经济','地产','制造业','供应链','航运','物流','出海','汽车','电动汽车','消费电子','PCB','MLCC','量子计算'];
-const FOCUSED_ACTION_TERMS = ['上涨','下跌','暴涨','暴跌','大涨','大跌','反弹','回调','创新高','新低','涨停','跌停','增持','减持','回购','收购','涨价','降价','订单','交付','销量','业绩','增长','放缓','扩产','监管','处罚','封板','盘前','盘后','开盘','收盘','重罚','降费','降准','加仓','减仓'];
-const LOW_RELEVANCE_TERMS = ['洪水','防汛','暴雨','台风','地震','救援','火灾','车祸','事故','遇难','执法','清退','违法','犯罪','案件','警方','判决','医院','明星','恋情','离婚','出轨','综艺','体育','比赛','感染','病例','邮轮','大雾','蓝色预警','黄色预警','总统','总理','政府职务','法官','泄密'];
+const FOCUSED_CONTEXT_TERMS = ['科技','金融科技','科创','芯片','半导体','AI','人工智能','大模型','算力','云计算','数据中心','量子计算','机器人','自动驾驶','低空经济','商业航天','新能源','电池','光伏','储能','医药','创新药','游戏','电商','互联网','平台经济','地产','制造业','供应链','航运','物流','出海','汽车','电动汽车','消费电子','PCB','MLCC','无人驾驶','智能驾驶','支付','数字人民币'];
+const FOCUSED_ACTION_TERMS = ['上涨','下跌','涨','跌','暴涨','暴跌','大涨','大跌','反弹','回调','创新高','新低','涨停','跌停','增持','减持','回购','收购','涨价','降价','订单','交付','销量','业绩','增长','放缓','扩产','监管','处罚','封板','盘前','盘后','开盘','收盘','重罚','降费','降准','加仓','减仓','收涨','收跌','激增','飙升','跳水','领涨','领跌','走强','走低'];
+const LOW_RELEVANCE_TERMS = ['洪水','防汛','暴雨','台风','地震','救援','火灾','车祸','事故','遇难','执法','清退','违法','犯罪','案件','警方','判决','医院','明星','恋情','离婚','出轨','综艺','体育','比赛','感染','病例','邮轮','大雾','蓝色预警','黄色预警','总统','总理','政府职务','法官','泄密','召回','缺陷汽车'];
+const MARKET_SIGNAL_TITLE_TERMS = ['股价','股票','A股','港股','美股','上市','财报','营收','利润','估值','融资','并购','收购','IPO','退市','涨停','跌停','大涨','大跌','基金','证券'];
 
 function hotTopicFocusScore(item={}) {
   const titleText = `${item.title || item.topic || ''}`.replace(/毛利率/g, '毛利');
@@ -1719,17 +1720,23 @@ function hotTopicFocusScore(item={}) {
   const hasFocusedTitle = FOCUSED_TOPIC_TERMS.some(term => titleText.includes(term));
   const hasFocusedSummary = FOCUSED_TOPIC_TERMS.some(term => summaryText.includes(term));
   const hasFocused = hasFocusedTitle || hasFocusedSummary;
-  const hasContext = FOCUSED_CONTEXT_TERMS.some(term => text.includes(term));
+  const hasTechTitle = FOCUSED_CONTEXT_TERMS.some(term => titleText.includes(term));
+  const hasTechSummary = FOCUSED_CONTEXT_TERMS.some(term => summaryText.includes(term));
+  const hasTech = hasTechTitle || hasTechSummary;
   const hasAction = FOCUSED_ACTION_TERMS.some(term => text.includes(term));
   const low = LOW_RELEVANCE_TERMS.some(term => text.includes(term));
-  if (/第一财经|东方财富|财联社|证券时报|中国人民银行|证监会|经济观察网|中国新闻网财经|FT中文网/.test(source)) score += 16;
+  const hasMarketSignalTitle = MARKET_SIGNAL_TITLE_TERMS.some(term => titleText.includes(term));
+  if (/第一财经|东方财富|财联社|证券时报|中国人民银行|证监会|经济观察网|中国新闻网财经|FT中文网|36氪/.test(source)) score += 16;
+  else if (/百度热搜|微博热搜|今日头条热榜|腾讯热榜/.test(source)) score += 6;
   else if (/财经/.test(text) || /财经/.test(source)) score += 14;
-  if (hasFocusedTitle) score += 55;
-  else if (hasFocusedSummary) score += 25;
-  if (hasAction) score += 22;
-  if (hasContext && (hasFocusedTitle || hasAction)) score += 10;
-  if (low && !hasFocused) score -= 45;
-  else if (low) score -= 25;
+  if (hasFocusedTitle) score += 44;
+  else if (hasFocusedSummary) score += 24;
+  if (hasTechTitle) score += 30;
+  else if (hasTechSummary) score += 16;
+  if (hasAction) score += 18;
+  if ((text.includes('召回') || text.includes('缺陷汽车')) && !hasMarketSignalTitle) score -= 45;
+  if (low && !(hasFocusedTitle || (hasTechTitle && hasAction))) score -= 45;
+  else if (low) score -= 20;
   if (Number(item.heat_score || 0) && score > 0) score += Math.min(10, Math.log10(Number(item.heat_score || 0) + 1) * 2);
   return score;
 }
@@ -1737,7 +1744,7 @@ function hotTopicFocusScore(item={}) {
 function focusHotTopics(topics=[], limit=80) {
   const scored = (topics || []).map(item => ({ item, score: hotTopicFocusScore(item) }));
   return scored
-    .filter(entry => entry.score >= 55)
+    .filter(entry => entry.score >= 36)
     .sort((a, b) => (b.score - a.score) || Number(b.item.heat_score || 0) - Number(a.item.heat_score || 0))
     .slice(0, limit)
     .map(entry => entry.item);
@@ -2175,13 +2182,13 @@ function renderHotSources(topics, meta={}) {
     <div class="source-section">
       <div class="source-toolbar">
         <div>
-          <div class="source-title-main">公开金融信息源</div>
-          <div class="source-stats">已按金融相关性过滤，可显示 ${topics.length} 条，当前展示 ${filteredTopics.length} 条；公开源无需平台登录。</div>
+          <div class="source-title-main">公开金融科技信息源</div>
+          <div class="source-stats">已按金融科技相关性过滤，可显示 ${topics.length} 条，当前展示 ${filteredTopics.length} 条；公开源无需平台登录。</div>
         </div>
         <button class="btn btn-outline btn-sm" onclick="${refreshAction}">刷新</button>
       </div>
       ${topics.length ? `<div class="source-chips">${allChip}${chips}</div>` : ''}
-      ${filteredTopics.length ? `<div class="source-grid">${cards}</div>` : `<div class="source-empty">暂未抓到公开金融热点。可以稍后重试，或查看抖音热点源入口。</div>`}
+      ${filteredTopics.length ? `<div class="source-grid">${cards}</div>` : `<div class="source-empty">暂未抓到公开金融科技热点。可以稍后重试，或查看抖音热点源入口。</div>`}
     </div>
     ${showPlatform ? renderPlatformSourceSection(meta.platform || {}) : ''}
   </div>`;
@@ -2226,7 +2233,7 @@ async function loadHotSources() {
   document.getElementById('outputContent').style.display = 'block';
   document.getElementById('outputMeta').textContent = '热点源抓取中…';
   document.getElementById('exportBtn').style.display = 'none';
-  document.getElementById('outputContent').innerHTML = '<div class="source-empty"><span class="spinner"></span> 正在抓取公开金融源和本机平台源…</div>';
+  document.getElementById('outputContent').innerHTML = '<div class="source-empty"><span class="spinner"></span> 正在抓取公开金融科技源和本机平台源…</div>';
   addLog('HOT', 'tag-hot', '开始抓取近期热点信息源…');
   try {
     const platformKeyword = document.getElementById('cfgKeyword').value.trim()
@@ -2236,7 +2243,7 @@ async function loadHotSources() {
     const focusedTopics = focusHotTopics(data.topics || [], 80);
     const platformState = { keyword: platformKeyword, loading: true, items: [], status: {}, searchLinks: [] };
     renderHotSources(focusedTopics, { ...data, platform: platformState });
-    addLog('HOT', 'tag-hot', `公开金融源抓取完成：原始 ${(data.raw_total || data.topics?.length || 0)} 条，过滤后 ${focusedTopics.length} 条 ✓`);
+    addLog('HOT', 'tag-hot', `公开金融科技源抓取完成：原始 ${(data.raw_total || data.topics?.length || 0)} 条，过滤后 ${focusedTopics.length} 条 ✓`);
 
     try {
       const bridge = await fetchViralBridge(platformKeyword, '');
@@ -2281,19 +2288,19 @@ async function loadHotSources() {
 async function loadPublicHotSources() {
   document.getElementById('outputPlaceholder').style.display = 'none';
   document.getElementById('outputContent').style.display = 'block';
-  document.getElementById('outputMeta').textContent = '公开金融源抓取中…';
+  document.getElementById('outputMeta').textContent = '公开金融科技源抓取中…';
   document.getElementById('exportBtn').style.display = 'none';
-  document.getElementById('outputContent').innerHTML = '<div class="source-empty"><span class="spinner"></span> 正在抓取公开金融信息源…</div>';
-  addLog('HOT', 'tag-hot', '开始抓取公开金融信息源…');
+  document.getElementById('outputContent').innerHTML = '<div class="source-empty"><span class="spinner"></span> 正在抓取公开金融科技信息源…</div>';
+  addLog('HOT', 'tag-hot', '开始抓取公开金融科技信息源…');
   try {
     const data = await fetchHotTopics(80);
     const focusedTopics = focusHotTopics(data.topics || [], 80);
     renderHotSources(focusedTopics, { ...data, showPlatform: false, refreshAction: 'loadPublicHotSources()' });
-    addLog('HOT', 'tag-hot', `公开金融源抓取完成：原始 ${(data.raw_total || data.topics?.length || 0)} 条，过滤后 ${focusedTopics.length} 条 ✓`);
+    addLog('HOT', 'tag-hot', `公开金融科技源抓取完成：原始 ${(data.raw_total || data.topics?.length || 0)} 条，过滤后 ${focusedTopics.length} 条 ✓`);
   } catch(e) {
-    document.getElementById('outputMeta').textContent = '公开金融源抓取失败';
-    renderHelperSetupPanel(`公开金融源接口暂不可用：${e.message}`);
-    addLog('HOT', 'tag-hot', `<span style="color:#f87171">公开金融源抓取失败：${escapeHtml(e.message)}</span>`);
+    document.getElementById('outputMeta').textContent = '公开金融科技源抓取失败';
+    renderHelperSetupPanel(`公开金融科技源接口暂不可用：${e.message}`);
+    addLog('HOT', 'tag-hot', `<span style="color:#f87171">公开金融科技源抓取失败：${escapeHtml(e.message)}</span>`);
   }
 }
 
@@ -2544,9 +2551,9 @@ async function runRealPipeline(forceTopic) {
     setNodeState('Judge', 'running');
     addLog('JUDGE', 'tag-judge', 'AI 开始评估选题…');
     try {
-      const sys2 = '你是金融短视频选题专家。只从金融相关候选中选择，纯科技、泛商业、社会、灾害、治安、娱乐类没有明确金融影响的一律排除。对选题按爆款潜力评分（0-100），命中以下法则越多越好：信息差/揭秘、情绪共鸣点、权威解读、反认知观点、常见痛点、替弱势群体发声、说出大众心里话、借势、稀缺信息。输出纯JSON（不要代码块）：{"topic":"","score":90,"criteria":["法则1"]}';
+      const sys2 = '你是金融科技短视频选题专家。只从金融科技相关候选中选择，纯社会、灾害、治安、娱乐类没有明确财经科技影响的一律排除。对选题按爆款潜力评分（0-100），命中以下法则越多越好：信息差/揭秘、情绪共鸣点、权威解读、反认知观点、常见痛点、替弱势群体发声、说出大众心里话、借势、稀缺信息。输出纯JSON（不要代码块）：{"topic":"","score":90,"criteria":["法则1"]}';
       const topicsStr = topics.map((t, i) => `${i+1}. ${t.topic}${t.summary ? `｜${t.summary}` : ''}`).join('\n');
-      winner = normalizeTopicDecision(await callLLMJson(sys2, `对以下选题评分并选出最佳。不要选择纯科技新品、泛商业、洪水防汛、执法清退、普通社会事件等缺少金融影响的热点：\n${topicsStr}`), topics);
+      winner = normalizeTopicDecision(await callLLMJson(sys2, `对以下选题评分并选出最佳。不要选择洪水防汛、执法清退、普通社会事件等缺少财经科技影响的热点：\n${topicsStr}`), topics);
       addLog('JUDGE', 'tag-judge', `最佳选题 [${winner.score}分]：${winner.topic}`);
       addLog('JUDGE', 'tag-judge', `命中法则：${(winner.criteria||[]).join('、')}`);
       setNodeState('Judge', 'done');
@@ -2814,7 +2821,7 @@ async function runMockPipeline() {
   const topic = document.getElementById('cfgTopic').value.trim() || null;
 
   setNodeState('Hot', 'running');
-  addLog('HOT', 'tag-hot', '开始抓取公开金融热点…（演示模式，填写 AI 生成密钥启用真实生成）');
+  addLog('HOT', 'tag-hot', '开始抓取公开金融科技热点…（演示模式，填写 AI 生成密钥启用真实生成）');
   await animateProgress('Hot', 1500);
   await sleep(200);
   addLog('HOT', 'tag-hot', '东方财富/财联社 → 45 条');
