@@ -9,6 +9,7 @@ from typing import List
 from agents.base_agent import BaseAgent
 from data_models import HotTopic
 from utils.crawler import fetch_all_hot_topics
+from utils.topic_filter import rank_relevant_topics
 
 # ① 直接财经/科技关键词：热度 ×3（财经IP首选）
 FINANCE_KEYWORDS = [
@@ -79,8 +80,9 @@ class HotTopicAgent(BaseAgent):
         topics = await fetch_all_hot_topics()
         self.log(f"原始热点 {len(topics)} 条")
 
-        # 财经收束：加权排序让直接财经 > 政经 > 可桥接财经话题自然浮到前排
-        topics.sort(key=_boost_score, reverse=True)
+        # 财经/科技商业收束：先过滤纯社会/灾害/娱乐热点，再按相关性排序
+        topics = rank_relevant_topics(topics, limit=60)
+        self.log(f"财经/科技相关热点 {len(topics)} 条")
 
         from collections import Counter
         src_dist = Counter(t.source.split("/")[0] for t in topics[:60])

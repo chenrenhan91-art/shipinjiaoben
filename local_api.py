@@ -23,6 +23,7 @@ from utils.helper_supervisor import (
     set_douyin_cookie_direct,
 )
 from utils.crawler import fetch_all_hot_topics
+from utils.topic_filter import rank_relevant_topics
 from utils.viral_bridge import check_douyin_status, extract_source_content, search_viral_content, get_video_transcript
 
 
@@ -137,16 +138,20 @@ async def viral_search(req: ViralSearchRequest) -> dict:
 @app.get("/api/hot/topics")
 async def hot_topics(limit: int = 80) -> dict:
     limit = max(1, min(limit, 120))
-    topics = await fetch_all_hot_topics()
-    limited_topics = topics[:limit]
+    raw_topics = await fetch_all_hot_topics()
+    limited_topics = rank_relevant_topics(raw_topics, limit=limit)
+    if not limited_topics:
+        limited_topics = raw_topics[:limit]
     source_summary: dict[str, int] = {}
     for topic in limited_topics:
         source_name = topic.source.split("/")[0]
         source_summary[source_name] = source_summary.get(source_name, 0) + 1
     return {
         "ok": True,
-        "total": len(topics),
+        "total": len(limited_topics),
+        "raw_total": len(raw_topics),
         "limit": limit,
+        "filter": "finance_tech_business",
         "source_summary": source_summary,
         "topics": [topic.model_dump(mode="json") for topic in limited_topics],
     }

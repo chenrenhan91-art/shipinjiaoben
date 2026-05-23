@@ -95,6 +95,24 @@ select.config-input option { background: var(--bg3); }
 .sidebar-full-control { width: 100%; margin-bottom: 8px; }
 .sidebar-link-control { display: block; text-align: center; text-decoration: none; }
 .hot-source-hint { font-size: 11px; color: var(--muted); line-height: 1.6; }
+.workflow-guide { display: grid; gap: 7px; }
+.workflow-step {
+  display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start;
+  padding: 8px 9px; border: 1px solid var(--border); border-radius: 8px;
+  background: rgba(35,39,58,.55); color: var(--muted);
+}
+.workflow-step.active { border-color: var(--accent); color: var(--text); background: rgba(91,106,248,.12); }
+.workflow-step.done { border-color: rgba(34,197,94,.35); color: #86efac; }
+.workflow-num {
+  width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: var(--bg3); color: inherit; font-size: 11px; font-weight: 800;
+}
+.workflow-step.active .workflow-num { background: var(--accent); color: #fff; }
+.workflow-step.done .workflow-num { background: rgba(34,197,94,.18); color: #86efac; }
+.workflow-name { font-size: 12px; font-weight: 800; color: inherit; margin-bottom: 2px; }
+.workflow-desc { font-size: 11px; line-height: 1.5; color: var(--muted); }
+.workflow-step.active .workflow-desc { color: #aeb7ff; }
+.workflow-step.done .workflow-desc { color: #86efac; }
 
 /* ── 右侧内容 ── */
 .content { overflow-y: auto; display: flex; flex-direction: column; }
@@ -480,6 +498,16 @@ select.config-input option { background: var(--bg3); }
     </div>
 
     <div class="sidebar-section">
+      <div class="sidebar-title">操作步骤</div>
+      <div class="workflow-guide" id="workflowGuide">
+        <div class="workflow-step active" data-step="1"><span class="workflow-num">1</span><div><div class="workflow-name">定方向</div><div class="workflow-desc">填关键词，或打开热点源。</div></div></div>
+        <div class="workflow-step" data-step="2"><span class="workflow-num">2</span><div><div class="workflow-name">选素材</div><div class="workflow-desc">点“用作选题”或粘贴参考链接。</div></div></div>
+        <div class="workflow-step" data-step="3"><span class="workflow-num">3</span><div><div class="workflow-name">开始生成</div><div class="workflow-desc">确认主题后点击顶部按钮。</div></div></div>
+        <div class="workflow-step" data-step="4"><span class="workflow-num">4</span><div><div class="workflow-name">导出复用</div><div class="workflow-desc">检查脚本后导出阅读版。</div></div></div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
       <div class="sidebar-title">热点源</div>
       <button class="btn btn-outline sidebar-full-control" onclick="loadPublicHotSources()">↗ 公开热点源（免平台登录）</button>
       <button class="btn btn-outline sidebar-full-control" id="douyinHotBtn" onclick="loadDouyinHotSources()">抖音热点源（需助手）</button>
@@ -612,6 +640,7 @@ select.config-input option { background: var(--bg3); }
 // ═══════════════════════════════════
 let currentMode = 1;
 let isRunning = false;
+let currentWorkflowStep = 1;
 const DEFAULT_API_BASE = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 // 百炼免费额度模型切换链：额度/限流/模型未开通时依次尝试下一个
 const FALLBACK_MODELS = ['qwen3.6-plus', 'qwen3.6-flash', 'qwen3.5-plus', 'qwen3.5-flash', 'qwen-plus', 'qwen-turbo'];
@@ -626,6 +655,60 @@ const REQUIRED_HELPER_VERSION = '20260520';
 let activeHelperBase = readSavedHelperBase();
 let helperConnected = false;
 let lastHelperStatus = null;
+
+function setWorkflowStep(step, detail='') {
+  currentWorkflowStep = step;
+  document.querySelectorAll('.workflow-step').forEach(el => {
+    const n = Number(el.dataset.step || 0);
+    el.className = 'workflow-step' + (n < step ? ' done' : n === step ? ' active' : '');
+  });
+  if (detail) document.getElementById('pipelineStatus').textContent = detail;
+}
+
+function currentInputSignature() {
+  return JSON.stringify({
+    topic: document.getElementById('cfgTopic')?.value?.trim() || '',
+    keyword: document.getElementById('cfgKeyword')?.value?.trim() || '',
+    source: document.getElementById('cfgSourceUrl')?.value?.trim() || '',
+  });
+}
+
+function clearCandidateQueue() {
+  window._remainingCandidates = [];
+  window._allAgentTopics = [];
+  window._candidateSignature = '';
+}
+
+function updateRunButtonText(text='') {
+  const btn = document.getElementById('runBtn');
+  if (!btn || isRunning) return;
+  if (text) {
+    btn.textContent = text;
+    return;
+  }
+  const remCount = (window._remainingCandidates || []).length;
+  const canContinue = remCount > 0 && window._candidateSignature === currentInputSignature() && !document.getElementById('cfgTopic').value.trim();
+  if (canContinue) btn.textContent = `▶ 继续生成（还有 ${remCount} 个候选）`;
+  else if (document.getElementById('cfgTopic').value.trim()) btn.textContent = '▶ 按已选主题生成';
+  else if (document.getElementById('cfgKeyword').value.trim()) btn.textContent = '▶ 按关键词生成';
+  else btn.textContent = '▶ 开始生成';
+}
+
+function bindInputChangeHandlers() {
+  const keywordEl = document.getElementById('cfgKeyword');
+  const sourceEl = document.getElementById('cfgSourceUrl');
+  if (keywordEl) keywordEl.addEventListener('input', () => {
+    document.getElementById('cfgTopic').value = '';
+    clearCandidateQueue();
+    setWorkflowStep(1, '关键词已更新，点击热点源或直接生成…');
+    updateRunButtonText();
+  });
+  if (sourceEl) sourceEl.addEventListener('input', () => {
+    clearCandidateQueue();
+    setWorkflowStep(2, '参考素材已更新，确认主题后开始生成…');
+    updateRunButtonText();
+  });
+}
 
 // ═══════════════════════════════════
 // 模式切换
@@ -992,6 +1075,7 @@ const MOCK_REVIEW = {
 async function runDemo() {
   if (isRunning) return;
   isRunning = true;
+  setWorkflowStep(3, '正在生成脚本…');
   document.getElementById('badgeLive').textContent = '● 运行中';
   const btn = document.getElementById('runBtn');
   btn.disabled = true;
@@ -1008,25 +1092,29 @@ async function runDemo() {
   const apiKey = document.getElementById('cfgApiKey').value.trim();
   try {
     if (apiKey) {
-      const nextCandidate = window._remainingCandidates && window._remainingCandidates.length > 0
+      const hasLockedTopic = !!document.getElementById('cfgTopic').value.trim();
+      const sameCandidateRun = window._candidateSignature === currentInputSignature();
+      const nextCandidate = !hasLockedTopic && sameCandidateRun && window._remainingCandidates && window._remainingCandidates.length > 0
         ? window._remainingCandidates.shift() : null;
+      if (hasLockedTopic || !sameCandidateRun) clearCandidateQueue();
       const r = await runRealPipeline(nextCandidate ? nextCandidate.topic : null);
       document.getElementById('pipelineStatus').innerHTML = '<span style="color:#4ade80">✓ 全流程完成（真实 AI）</span>';
+      setWorkflowStep(4);
       addLog('SYS', 'tag-sys', '═══ AI 运行完成，脚本已生成，点击「↓ 导出脚本」下载 ═══');
       renderOutput(r.topic, r.scripts, r.review, r.topics);
     } else {
       await runMockPipeline();
+      setWorkflowStep(4);
     }
   } catch(e) {
     document.getElementById('pipelineStatus').innerHTML = '<span style="color:#f87171">✗ 运行失败</span>';
     addLog('SYS', 'tag-sys', `运行失败：${e.message}`);
   }
 
-  btn.disabled = false;
-  const remCount = (window._remainingCandidates || []).length;
-  btn.textContent = remCount > 0 ? `▶ 继续生成（还有 ${remCount} 个候选）` : '▶ 再次生成';
   document.getElementById('badgeLive').textContent = '● 已就绪';
   isRunning = false;
+  btn.disabled = false;
+  updateRunButtonText((window._remainingCandidates || []).length ? '' : '▶ 再次生成');
 }
 
 // ═══════════════════════════════════
@@ -1443,6 +1531,10 @@ function resetNodes() {
 
 function resetAll() {
   if (isRunning) return;
+  clearCandidateQueue();
+  document.getElementById('cfgTopic').value = '';
+  document.getElementById('cfgKeyword').value = '';
+  document.getElementById('cfgSourceUrl').value = '';
   resetNodes();
   clearLog();
   document.getElementById('outputPlaceholder').style.display = 'flex';
@@ -1452,6 +1544,7 @@ function resetAll() {
   document.getElementById('pipelineStatus').textContent = '等待运行…';
   document.getElementById('runBtn').textContent = '▶ 开始生成';
   document.getElementById('badgeLive').textContent = '● 已就绪';
+  setWorkflowStep(1);
   addLog('SYS','tag-sys','已重置，等待运行…');
 }
 
@@ -1603,6 +1696,22 @@ function normalizeReferenceUrl(value) {
   return /^https?:\/\//i.test(url) ? url : '';
 }
 
+function referenceTextWithoutUrl(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const withoutUrl = text.replace(/https?:\/\/[^\s'"<>，。；、）)】」]+/ig, ' ').replace(/\s+/g, ' ').trim();
+  return countOralChars(withoutUrl) >= 8 ? withoutUrl : '';
+}
+
+function guessTopicFromReferenceInput(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const bracket = text.match(/【([^】]{4,80})】/);
+  if (bracket) return bracket[1].trim();
+  const withoutUrl = text.replace(/https?:\/\/\S+/g, '').replace(/复制打开[^，。]*/g, '').trim();
+  return withoutUrl.length >= 6 ? compactText(withoutUrl, 32) : '';
+}
+
 async function fetchUrlContent(urlInput) {
   const url = normalizeReferenceUrl(urlInput);
   if (!url) throw new Error('请输入有效的 http/https 参考链接');
@@ -1612,24 +1721,25 @@ async function fetchUrlContent(urlInput) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ source_url: url }),
     }, 35000);
-    const text = String(data.source_text || '').trim();
-    if (text.length >= 50) {
-      const items = Array.isArray(data.items) ? data.items : [];
-      let rawScript = String(items[0]?.script || '').trim();
-      // 对抖音视频尝试提取口播文案（平台字幕 → Whisper ASR → 描述文字）
-      if (/douyin\.com|iesdouyin\.com/.test(url)) {
-        try {
-          const apiKey = document.getElementById('cfgApiKey')?.value?.trim() || '';
-          const tr = await callHelper('/api/helper/transcript', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url, api_key: apiKey }),
-          }, 60000);  // Whisper 转录最长需 ~40s
-          if (tr?.ok && tr.transcript && (tr.method === 'subtitle' || tr.method === 'whisper')) {
-            rawScript = tr.transcript;
-          }
-        } catch (_) {}
-      }
+    const items = Array.isArray(data.items) ? data.items : [];
+    let text = String(data.source_text || '').trim();
+    let rawScript = String(items[0]?.script || '').trim();
+    // 对抖音视频尝试提取口播文案（平台字幕 → Whisper ASR → 描述文字）
+    if (/douyin\.com|iesdouyin\.com|v\.douyin\.com/.test(url)) {
+      try {
+        const apiKey = document.getElementById('cfgApiKey')?.value?.trim() || '';
+        const tr = await callHelper('/api/helper/transcript', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, api_key: apiKey }),
+        }, 60000);  // Whisper 转录最长需 ~40s
+        if (tr?.ok && tr.transcript) rawScript = tr.transcript;
+      } catch (_) {}
+    }
+    if (rawScript && !text.includes(rawScript.slice(0, 40))) {
+      text = `${text}\n文案/字幕素材：${rawScript}`.trim();
+    }
+    if (countOralChars(text) >= 30 || countOralChars(rawScript) >= 30) {
       return { text: text.slice(0, 4000), script: rawScript };
     }
     throw new Error(data.status?.source_url === 'invalid' ? '链接格式无效' : '本机提取内容为空');
@@ -1665,6 +1775,37 @@ function displayTopicScore(topic) {
   if (!heat) return 60;
   if (heat <= 100) return clampScore(heat);
   return clampScore(Math.log10(heat + 1) * 18);
+}
+
+const FOCUSED_TOPIC_TERMS = [
+  '经济','财经','金融','股市','股票','A股','港股','美股','基金','债券','期货','外汇','汇率','人民币','美元','黄金','油价','楼市','房价','房贷','利率','降息','加息','央行','美联储','通胀','GDP','财政','关税','贸易','消费','投资','理财','保险','银行','券商','上市','IPO','退市','并购','融资','估值','市值','财报','营收','利润','亏损','裁员','薪资','就业','招聘','指数','费城半导体','半导体指数','芯片','半导体','AI','人工智能','大模型','算力','机器人','新能源','电池','光伏','储能','电商','互联网','平台经济','供应链','出海'
+];
+const FOCUSED_ACTION_TERMS = ['上涨','下跌','涨','跌','暴涨','暴跌','大涨','大跌','反弹','回调','创新高','新低','涨停','跌停','增持','减持','回购','收购','涨价','降价','订单','交付','销量','业绩','增长','放缓','扩产','监管','处罚'];
+const LOW_RELEVANCE_TERMS = ['洪水','防汛','暴雨','台风','地震','救援','火灾','车祸','事故','遇难','执法','清退','违法','犯罪','案件','警方','判决','医院','明星','恋情','离婚','出轨','综艺','体育','比赛'];
+
+function hotTopicFocusScore(item={}) {
+  const text = `${item.title || item.topic || ''} ${item.summary || ''} ${(item.tags || []).join(' ')} ${item.source || ''}`;
+  let score = 0;
+  const hasFocused = FOCUSED_TOPIC_TERMS.some(term => text.includes(term));
+  const hasAction = FOCUSED_ACTION_TERMS.some(term => text.includes(term));
+  const low = LOW_RELEVANCE_TERMS.some(term => text.includes(term));
+  if (/第一财经|经济观察网|中国新闻网财经|36氪|财经/.test(text)) score += 24;
+  if (hasFocused) score += 45;
+  if (hasAction) score += 20;
+  if (low && !(hasFocused && hasAction)) score -= 45;
+  if (Number(item.heat_score || 0) && score > 0) score += Math.min(10, Math.log10(Number(item.heat_score || 0) + 1) * 2);
+  return score;
+}
+
+function focusHotTopics(topics=[], limit=80) {
+  const scored = (topics || []).map(item => ({ item, score: hotTopicFocusScore(item) }));
+  const focused = scored.filter(entry => entry.score >= 28);
+  const positive = focused.length ? focused : scored.filter(entry => entry.score > 0);
+  if (!positive.length) return topics;
+  return positive
+    .sort((a, b) => (b.score - a.score) || Number(b.item.heat_score || 0) - Number(a.item.heat_score || 0))
+    .slice(0, limit)
+    .map(entry => entry.item);
 }
 
 function firstTextValue(obj, keys) {
@@ -2100,7 +2241,7 @@ function renderHotSources(topics, meta={}) {
       <div class="source-toolbar">
         <div>
           <div class="source-title-main">公开热点信息源</div>
-          <div class="source-stats">可显示 ${topics.length} 条，当前展示 ${filteredTopics.length} 条；百度、头条、微博、腾讯、36氪等公开源无需平台登录。</div>
+          <div class="source-stats">已按财经/科技商业相关性过滤，可显示 ${topics.length} 条，当前展示 ${filteredTopics.length} 条；公开源无需平台登录。</div>
         </div>
         <button class="btn btn-outline btn-sm" onclick="${refreshAction}">刷新</button>
       </div>
@@ -2125,25 +2266,30 @@ function useHotSource(index) {
   const item = (window._hotSources || [])[index];
   if (!item) return;
   const title = item.title || item.topic || '';
+  clearCandidateQueue();
   document.getElementById('cfgTopic').value = title;
   document.getElementById('cfgKeyword').value = title.slice(0, 18);
   addLog('HOT', 'tag-hot', `已选择热点源作为本轮选题：「${escapeHtml(title)}」`);
-  document.getElementById('pipelineStatus').textContent = '已选择热点源，点击开始生成…';
+  setWorkflowStep(3, '已锁定热点源，点击开始生成…');
+  updateRunButtonText('▶ 按已选主题生成');
 }
 
 function usePlatformSource(index) {
   const item = (window._platformSources || [])[index];
   if (!item) return;
   const title = item.title || item.script || '';
+  clearCandidateQueue();
   document.getElementById('cfgTopic').value = title;
   document.getElementById('cfgKeyword').value = title.slice(0, 18);
   if (item.url) document.getElementById('cfgSourceUrl').value = item.url;
   addLog('HOT', 'tag-hot', `已选择${platformDisplayName(item.platform)}作为本轮选题：「${escapeHtml(title)}」`);
-  document.getElementById('pipelineStatus').textContent = '已选择平台作品源，点击开始生成…';
+  setWorkflowStep(3, '已锁定平台作品源，点击开始生成…');
+  updateRunButtonText('▶ 按已选主题生成');
 }
 
 
 async function loadHotSources() {
+  setWorkflowStep(2, '正在抓取热点源…');
   document.getElementById('outputPlaceholder').style.display = 'none';
   document.getElementById('outputContent').style.display = 'block';
   document.getElementById('outputMeta').textContent = '热点源抓取中…';
@@ -2155,14 +2301,15 @@ async function loadHotSources() {
       || document.getElementById('cfgTopic').value.trim().slice(0, 18)
       || '财经热点';
     const data = await fetchHotTopics(80);
+    const focusedTopics = focusHotTopics(data.topics || [], 80);
     const platformState = { keyword: platformKeyword, loading: true, items: [], status: {}, searchLinks: [] };
-    renderHotSources(data.topics || [], { ...data, platform: platformState });
-    addLog('HOT', 'tag-hot', `公开热点源抓取完成：${(data.topics || []).length} 条，可点击跳转源头 ✓`);
+    renderHotSources(focusedTopics, { ...data, platform: platformState });
+    addLog('HOT', 'tag-hot', `公开热点源抓取完成：原始 ${(data.raw_total || data.topics?.length || 0)} 条，过滤后 ${focusedTopics.length} 条 ✓`);
 
     try {
       const bridge = await fetchViralBridge(platformKeyword, '');
       const items = bridge.items || [];
-      renderHotSources(data.topics || [], {
+      renderHotSources(focusedTopics, {
         ...data,
         platform: {
           keyword: platformKeyword,
@@ -2176,7 +2323,7 @@ async function loadHotSources() {
         ? `本机平台源抓取完成：${items.length} 条抖音/小红书作品源 ✓`
         : '本机平台源暂未抓到作品卡片，已提供平台搜索入口');
     } catch(platformError) {
-      renderHotSources(data.topics || [], {
+      renderHotSources(focusedTopics, {
         ...data,
         platform: {
           keyword: platformKeyword,
@@ -2200,6 +2347,7 @@ async function loadHotSources() {
 }
 
 async function loadPublicHotSources() {
+  setWorkflowStep(2, '正在抓取公开热点源…');
   document.getElementById('outputPlaceholder').style.display = 'none';
   document.getElementById('outputContent').style.display = 'block';
   document.getElementById('outputMeta').textContent = '公开热点源抓取中…';
@@ -2208,8 +2356,10 @@ async function loadPublicHotSources() {
   addLog('HOT', 'tag-hot', '开始抓取公开热点信息源…');
   try {
     const data = await fetchHotTopics(80);
-    renderHotSources(data.topics || [], { ...data, showPlatform: false, refreshAction: 'loadPublicHotSources()' });
-    addLog('HOT', 'tag-hot', `公开热点源抓取完成：${(data.topics || []).length} 条，可点击跳转源头 ✓`);
+    const focusedTopics = focusHotTopics(data.topics || [], 80);
+    renderHotSources(focusedTopics, { ...data, showPlatform: false, refreshAction: 'loadPublicHotSources()' });
+    setWorkflowStep(2, '已加载热点源，选择一条作为选题…');
+    addLog('HOT', 'tag-hot', `公开热点源抓取完成：原始 ${(data.raw_total || data.topics?.length || 0)} 条，过滤后 ${focusedTopics.length} 条 ✓`);
   } catch(e) {
     document.getElementById('outputMeta').textContent = '公开热点源抓取失败';
     renderHelperSetupPanel(`公开热点源接口暂不可用：${e.message}`);
@@ -2237,6 +2387,9 @@ async function runDouyinHotSearch() {
     return;
   }
   document.getElementById('cfgKeyword').value = keyword;
+  document.getElementById('cfgTopic').value = '';
+  clearCandidateQueue();
+  setWorkflowStep(2, '正在抓取抖音热点源…');
   addLog('HOT', 'tag-hot', `准备抓取抖音平台热点源（关键词：「${escapeHtml(keyword)}」）…`);
 
   const status = await checkLocalHelperStatus(false);
@@ -2314,6 +2467,9 @@ async function runDouyinKeywordVideoSearch() {
     return;
   }
   document.getElementById('cfgKeyword').value = keyword;
+  document.getElementById('cfgTopic').value = '';
+  clearCandidateQueue();
+  setWorkflowStep(2, '正在搜索关键词相关热点视频…');
   addLog('HOT', 'tag-hot', `准备搜索关键词相关热点视频（关键词：「${escapeHtml(keyword)}」）…`);
 
   const status = await checkLocalHelperStatus(false);
@@ -2388,10 +2544,13 @@ async function runDouyinKeywordVideoSearch() {
 // 真实 AI 流水线
 // ═══════════════════════════════════
 async function runRealPipeline(forceTopic) {
-  const manualTopic = document.getElementById('cfgTopic').value.trim();
+  let manualTopic = document.getElementById('cfgTopic').value.trim();
   const keyword = document.getElementById('cfgKeyword').value.trim();
   const rawSourceUrl = document.getElementById('cfgSourceUrl').value.trim();
   const sourceUrl = normalizeReferenceUrl(rawSourceUrl);
+  const pastedReferenceText = referenceTextWithoutUrl(rawSourceUrl);
+  if (!manualTopic && pastedReferenceText) manualTopic = guessTopicFromReferenceInput(rawSourceUrl) || keyword;
+  if (!manualTopic && rawSourceUrl && keyword) manualTopic = keyword;
   let topics = [], winner, draft, scripts, review, lengthProfile;
 
   if (forceTopic) {
@@ -2413,7 +2572,7 @@ async function runRealPipeline(forceTopic) {
     } else {
       try {
         const hotData = await fetchHotTopics(60);
-        const hotTopics = hotData.topics || [];
+        const hotTopics = focusHotTopics(hotData.topics || [], 60);
         window._hotSources = hotTopics;
         const matched = keyword ? hotTopics.filter(t => `${t.title || ''} ${t.summary || ''}`.includes(keyword)) : hotTopics;
         const candidates = (matched.length ? matched : hotTopics).slice(0, 6);
@@ -2447,22 +2606,31 @@ async function runRealPipeline(forceTopic) {
   await sleep(200);
 
   // Agent 2: 选题决策
-  setNodeState('Judge', 'running');
-  addLog('JUDGE', 'tag-judge', 'AI 开始评估选题…');
-  try {
-    const sys2 = '你是财经短视频选题专家。对选题按爆款潜力评分（0-100），命中以下法则越多越好：信息差/揭秘、情绪共鸣点、权威解读、反认知观点、常见痛点、替弱势群体发声、说出大众心里话、借势、名人窥探、涨跌偏好、稀缺信息、娱乐性。输出纯JSON（不要代码块）：{"topic":"","score":90,"criteria":["法则1"]}'; // 已移除 structure：下游未使用且易触发 LLM 重复键
-    const topicsStr = topics.map((t, i) => `${i+1}. ${t.topic}`).join('\n');
-    winner = normalizeTopicDecision(await callLLMJson(sys2, `对以下选题评分并选出最佳：\n${topicsStr}`), topics);
-    addLog('JUDGE', 'tag-judge', `最佳选题 [${winner.score}分]：${winner.topic}`);
-    addLog('JUDGE', 'tag-judge', `命中法则：${(winner.criteria||[]).join('、')}`);
+  if (manualTopic) {
+    winner = normalizeTopicDecision({ topic: manualTopic, score: 90, criteria: ['用户手动指定'] }, topics);
+    addLog('JUDGE', 'tag-judge', `手动选题已锁定：${winner.topic}`);
+    addLog('JUDGE', 'tag-judge', '本轮跳过自动改题，后续内容必须围绕该主题生成');
     setNodeState('Judge', 'done');
-  } catch(e) {
-    addLog('JUDGE', 'tag-judge', `<span style="color:#f87171">✗ ${e.message}</span>`);
-    setNodeState('Judge', 'error'); throw e;
+    clearCandidateQueue();
+  } else {
+    setNodeState('Judge', 'running');
+    addLog('JUDGE', 'tag-judge', 'AI 开始评估选题…');
+    try {
+      const sys2 = '你是财经短视频选题专家。只从财经/科技商业相关候选中选择，纯社会、灾害、治安、娱乐类没有明确商业切入的一律排除。对选题按爆款潜力评分（0-100），命中以下法则越多越好：信息差/揭秘、情绪共鸣点、权威解读、反认知观点、常见痛点、替弱势群体发声、说出大众心里话、借势、稀缺信息。输出纯JSON（不要代码块）：{"topic":"","score":90,"criteria":["法则1"]}';
+      const topicsStr = topics.map((t, i) => `${i+1}. ${t.topic}${t.summary ? `｜${t.summary}` : ''}`).join('\n');
+      winner = normalizeTopicDecision(await callLLMJson(sys2, `对以下选题评分并选出最佳。不要选择洪水防汛、执法清退、普通社会事件等弱相关热点：\n${topicsStr}`), topics);
+      addLog('JUDGE', 'tag-judge', `最佳选题 [${winner.score}分]：${winner.topic}`);
+      addLog('JUDGE', 'tag-judge', `命中法则：${(winner.criteria||[]).join('、')}`);
+      setNodeState('Judge', 'done');
+    } catch(e) {
+      addLog('JUDGE', 'tag-judge', `<span style="color:#f87171">✗ ${e.message}</span>`);
+      setNodeState('Judge', 'error'); throw e;
+    }
+    // 保存本轮所有候选，供「继续生成」循环使用，仅在输入未变化时生效
+    window._allAgentTopics = [...topics];
+    window._remainingCandidates = topics.filter(t => t.topic !== winner.topic);
+    window._candidateSignature = currentInputSignature();
   }
-  // 保存本轮所有候选，供「再次运行」循环使用
-  window._allAgentTopics = [...topics];
-  window._remainingCandidates = topics.filter(t => t.topic !== winner.topic);
   }
   // 来源搜索链接（forceTopic 与正常模式均生效）
   window._sourceLinks = {
@@ -2483,8 +2651,12 @@ async function runRealPipeline(forceTopic) {
   let sourceContent = '';
   let referenceScript = '';
   let scrapedSources = [];
-  if (rawSourceUrl && !sourceUrl) {
-    addLog('CONTENT', 'tag-content', '指定参考链接格式无法识别，请粘贴完整 http/https 链接');
+  if (pastedReferenceText) {
+    sourceContent = pastedReferenceText.slice(0, 4000);
+    referenceScript = pastedReferenceText;
+    addLog('CONTENT', 'tag-content', `已把粘贴内容作为参考素材（${sourceContent.length} 字符）✓`);
+  } else if (rawSourceUrl && !sourceUrl) {
+    addLog('CONTENT', 'tag-content', '指定参考链接格式无法识别，请粘贴完整 http/https 链接，或直接粘贴可读文案');
   }
 
   if (sourceUrl) {
@@ -2495,12 +2667,18 @@ async function runRealPipeline(forceTopic) {
       referenceScript = extracted.script;
       addLog('CONTENT', 'tag-content', `指定参考链接提取成功（${sourceContent.length} 字符），将优先作为洗稿素材 ✓`);
     } catch(e) {
-      addLog('CONTENT', 'tag-content', `指定参考链接提取失败（${e.message}），继续使用平台搜索/LLM 兜底`);
+      if (pastedReferenceText) {
+        sourceContent = pastedReferenceText.slice(0, 4000);
+        referenceScript = pastedReferenceText;
+        addLog('CONTENT', 'tag-content', `指定参考链接提取失败，已改用粘贴文本作为素材（${e.message}）`);
+      } else {
+        addLog('CONTENT', 'tag-content', `指定参考链接提取失败（${e.message}），继续使用平台搜索/LLM 兜底`);
+      }
     }
     await sleep(150);
   }
 
-  const bridgeKeyword = keyword || winner.topic;
+  const bridgeKeyword = manualTopic || keyword || winner.topic;
   addLog('CONTENT', 'tag-content', `连接本地 GitHub 采集桥接服务（关键词：「${bridgeKeyword}」）…`);
   try {
     const bridge = await fetchViralBridge(bridgeKeyword, sourceUrl);
@@ -2538,10 +2716,11 @@ async function runRealPipeline(forceTopic) {
   addLog('CONTENT', 'tag-content', `目标选题：「${winner.topic}」`);
   addLog('CONTENT', 'tag-content', '生成口播初稿（裁缝拼接法）…');
   try {
-    const sys3 = '你是财经短视频口播稿专家，用裁缝拼接法（短视频强钩子+长视频深度内容）写原创初稿。必须先参考用户给出的原视频文案内容和长度约束，再安排开场钩子、问题展开、核心洞察和结尾观点收束；不得把所有口播稿统一写成固定字数。严禁把“留下股票代码/评论区发持仓/我帮你看”这类导流诊断话术写进口播。无论选题是否直接涉及财经，必须找到其财经切入点（行业影响/个人理财启示/消费趋势/投资逻辑），以财经视角为普通投资者/打工人提供有价值的洞察。只输出纯文本。';
+    const topicLock = `硬性主题锁定：本轮只写「${winner.topic}」。不得改写成洪水防汛、执法清退、小米新车或其他候选热点；如果参考素材里混有无关内容，只提取表达结构，不迁移无关事实。`;
+    const sys3 = '你是财经短视频口播稿专家，用裁缝拼接法（短视频强钩子+长视频深度内容）写原创初稿。必须先参考用户给出的原视频文案内容和长度约束，再安排开场钩子、问题展开、核心洞察和结尾观点收束；不得把所有口播稿统一写成固定字数。严禁把“留下股票代码/评论区发持仓/我帮你看”这类导流诊断话术写进口播。无论选题是否直接涉及财经，必须找到其财经切入点（行业影响/个人理财启示/消费趋势/投资逻辑），以财经视角为普通投资者/打工人提供有价值的洞察。必须严格遵守用户指定主题，不得换题。只输出纯文本。';
     draft = await callLLM(sys3, sourceContent
-      ? `来源素材（请基于此内容进行裁缝拼接洗稿，改写到相似度≤20%）：\n${sourceContent}\n\n选题：${winner.topic}。${oralLengthInstruction(lengthProfile)}风格：理性犀利，口语化，保留原视频文案的核心信息链但彻底改写表达。禁止带入评论区导流、股票代码诊断、私信加群等话术。`
-      : `选题：${winner.topic}。${oralLengthInstruction(lengthProfile)}风格：理性犀利，有信息差，口语化，让普通投资者/从业者有收获。`);
+      ? `${topicLock}\n\n来源素材（请基于此内容进行裁缝拼接洗稿，改写到相似度≤20%）：\n${sourceContent}\n\n选题：${winner.topic}。${oralLengthInstruction(lengthProfile)}风格：理性犀利，口语化，保留原视频文案的核心信息链但彻底改写表达。禁止带入评论区导流、股票代码诊断、私信加群等话术。`
+      : `${topicLock}\n\n选题：${winner.topic}。${oralLengthInstruction(lengthProfile)}风格：理性犀利，有信息差，口语化，让普通投资者/从业者有收获。`);
     addLog('CONTENT', 'tag-content', '口播初稿完成，相似度检测 → <strong style="color:#4ade80">通过 ✓</strong>');
     setNodeState('Content', 'done');
   } catch(e) {
@@ -2551,7 +2730,7 @@ async function runRealPipeline(forceTopic) {
   await sleep(200);
 
   // 爆款视频搜索（抖音/小红书关键词匹配，LLM 提取爆款基因）
-  const kw = keyword || winner.topic.slice(0, 8);
+  const kw = manualTopic || keyword || winner.topic.slice(0, 8);
   addLog('CONTENT', 'tag-content', `🔍 搜索抖音/小红书爆款（关键词：「${kw}」，阈值：抖音≥10万赞·小红书≥1万赞）…`);
   let viralRef = '';
   try {
@@ -2585,7 +2764,7 @@ async function runRealPipeline(forceTopic) {
   const ANGLES    = ['痛点共鸣', '信息差揭秘', '普通人视角'];
   const STRUCTS   = ['场景带入+情绪推进', '问题前置+层层解答', '结果前置+倒叙还原'];
   const HOOK_TYPES_LIST = ['痛点类', '好奇类', '反差类'];
-  const sys4_base = '你是财经短视频脚本专家，擅长写真人口播稿。根据选题、原视频文案、口播素材和爆款参考，生成1个完整脚本版本。必须逐版改写原视频文案的核心信息链，不能脱离原素材泛写。' +
+  const sys4_base = '你是财经短视频脚本专家，擅长写真人口播稿。根据选题、原视频文案、口播素材和爆款参考，生成1个完整脚本版本。必须严格围绕用户指定选题，不得换成其他热点；必须逐版改写原视频文案的核心信息链，不能脱离原素材泛写。' +
     `口播稿须完全口语化，像真人在说话，有停顿感、有情绪起伏、接地气；${oralLengthInstruction(lengthProfile)}` +
     '抖音财经合规：oral_script、direct_post、hooks、pinned均禁止出现留下股票代码/评论区发持仓/我帮你诊断/私信/加群/免费诊股/荐股/关注我等导流或承诺式表述；不要预测具体股票涨跌，不给个股买卖建议。字符串值内禁止原始换行符。' +
     '输出纯JSON对象（不要代码块，不要注释，字符串值内禁止原始换行符）：' +
@@ -2606,7 +2785,7 @@ async function runRealPipeline(forceTopic) {
           ? `原视频文案（必须作为改写依据，不可照抄）：${compactText(lengthProfile.sourceCopy, 900)}\n`
           : '';
         const complianceNote = '抖音财经合规：不要写“留下股票代码帮你看”“评论区发持仓”“私信/加群/免费诊股/荐股/关注我”等导流或诊断话术；置顶评论只提开放性讨论问题，不索要代码、持仓或联系方式。';
-        const u4 = `选题：${winner.topic}\n${sourceCopyForPrompt}口播素材（按角度改写）：${draft}\n` +
+        const u4 = `硬性主题锁定：只写「${winner.topic}」，不得转向其他候选热点或参考素材中的无关事件。\n选题：${winner.topic}\n${sourceCopyForPrompt}口播素材（按角度改写）：${draft}\n` +
           (viralRef ? `爆款参考特征：${viralRef.slice(0, 200)}\n` : '') +
           `版本${idx+1}要求：${ANGLES[idx]}风格，结构：${STRUCTS[idx]}，钩子类型：${HOOK_TYPES_LIST[idx]}。\n` +
           `${oralLengthInstruction(lengthProfile)}\n` +
@@ -2918,6 +3097,9 @@ function exportScripts() {
   restoreBtn();
 }
 
+bindInputChangeHandlers();
+setWorkflowStep(1);
+updateRunButtonText();
 checkLocalHelperStatus(false);
 
 </script>
