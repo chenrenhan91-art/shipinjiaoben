@@ -95,25 +95,6 @@ select.config-input option { background: var(--bg3); }
 .sidebar-full-control { width: 100%; margin-bottom: 8px; }
 .sidebar-link-control { display: block; text-align: center; text-decoration: none; }
 .hot-source-hint { font-size: 11px; color: var(--muted); line-height: 1.6; }
-.workflow-guide { display: grid; gap: 7px; }
-.workflow-step {
-  display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start;
-  padding: 8px 9px; border: 1px solid var(--border); border-radius: 8px;
-  background: rgba(35,39,58,.55); color: var(--muted);
-}
-.workflow-step.active { border-color: var(--accent); color: var(--text); background: rgba(91,106,248,.12); }
-.workflow-step.done { border-color: rgba(34,197,94,.35); color: #86efac; }
-.workflow-num {
-  width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 50%; background: var(--bg3); color: inherit; font-size: 11px; font-weight: 800;
-}
-.workflow-step.active .workflow-num { background: var(--accent); color: #fff; }
-.workflow-step.done .workflow-num { background: rgba(34,197,94,.18); color: #86efac; }
-.workflow-name { font-size: 12px; font-weight: 800; color: inherit; margin-bottom: 2px; }
-.workflow-desc { font-size: 11px; line-height: 1.5; color: var(--muted); }
-.workflow-step.active .workflow-desc { color: #aeb7ff; }
-.workflow-step.done .workflow-desc { color: #86efac; }
-
 /* ── 右侧内容 ── */
 .content { overflow-y: auto; display: flex; flex-direction: column; }
 
@@ -498,16 +479,6 @@ select.config-input option { background: var(--bg3); }
     </div>
 
     <div class="sidebar-section">
-      <div class="sidebar-title">操作步骤</div>
-      <div class="workflow-guide" id="workflowGuide">
-        <div class="workflow-step active" data-step="1"><span class="workflow-num">1</span><div><div class="workflow-name">定方向</div><div class="workflow-desc">填关键词，或打开热点源。</div></div></div>
-        <div class="workflow-step" data-step="2"><span class="workflow-num">2</span><div><div class="workflow-name">选素材</div><div class="workflow-desc">点“用作选题”或粘贴参考链接。</div></div></div>
-        <div class="workflow-step" data-step="3"><span class="workflow-num">3</span><div><div class="workflow-name">开始生成</div><div class="workflow-desc">确认主题后点击顶部按钮。</div></div></div>
-        <div class="workflow-step" data-step="4"><span class="workflow-num">4</span><div><div class="workflow-name">导出复用</div><div class="workflow-desc">检查脚本后导出阅读版。</div></div></div>
-      </div>
-    </div>
-
-    <div class="sidebar-section">
       <div class="sidebar-title">热点源</div>
       <button class="btn btn-outline sidebar-full-control" onclick="loadPublicHotSources()">↗ 公开热点源（免平台登录）</button>
       <button class="btn btn-outline sidebar-full-control" id="douyinHotBtn" onclick="loadDouyinHotSources()">抖音热点源（需助手）</button>
@@ -640,7 +611,6 @@ select.config-input option { background: var(--bg3); }
 // ═══════════════════════════════════
 let currentMode = 1;
 let isRunning = false;
-let currentWorkflowStep = 1;
 const DEFAULT_API_BASE = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 // 百炼免费额度模型切换链：额度/限流/模型未开通时依次尝试下一个
 const FALLBACK_MODELS = ['qwen3.6-plus', 'qwen3.6-flash', 'qwen3.5-plus', 'qwen3.5-flash', 'qwen-plus', 'qwen-turbo'];
@@ -656,15 +626,6 @@ let activeHelperBase = readSavedHelperBase();
 let helperConnected = false;
 let lastHelperStatus = null;
 
-function setWorkflowStep(step, detail='') {
-  currentWorkflowStep = step;
-  document.querySelectorAll('.workflow-step').forEach(el => {
-    const n = Number(el.dataset.step || 0);
-    el.className = 'workflow-step' + (n < step ? ' done' : n === step ? ' active' : '');
-  });
-  if (detail) document.getElementById('pipelineStatus').textContent = detail;
-}
-
 function currentInputSignature() {
   return JSON.stringify({
     topic: document.getElementById('cfgTopic')?.value?.trim() || '',
@@ -677,37 +638,6 @@ function clearCandidateQueue() {
   window._remainingCandidates = [];
   window._allAgentTopics = [];
   window._candidateSignature = '';
-}
-
-function updateRunButtonText(text='') {
-  const btn = document.getElementById('runBtn');
-  if (!btn || isRunning) return;
-  if (text) {
-    btn.textContent = text;
-    return;
-  }
-  const remCount = (window._remainingCandidates || []).length;
-  const canContinue = remCount > 0 && window._candidateSignature === currentInputSignature() && !document.getElementById('cfgTopic').value.trim();
-  if (canContinue) btn.textContent = `▶ 继续生成（还有 ${remCount} 个候选）`;
-  else if (document.getElementById('cfgTopic').value.trim()) btn.textContent = '▶ 按已选主题生成';
-  else if (document.getElementById('cfgKeyword').value.trim()) btn.textContent = '▶ 按关键词生成';
-  else btn.textContent = '▶ 开始生成';
-}
-
-function bindInputChangeHandlers() {
-  const keywordEl = document.getElementById('cfgKeyword');
-  const sourceEl = document.getElementById('cfgSourceUrl');
-  if (keywordEl) keywordEl.addEventListener('input', () => {
-    document.getElementById('cfgTopic').value = '';
-    clearCandidateQueue();
-    setWorkflowStep(1, '关键词已更新，点击热点源或直接生成…');
-    updateRunButtonText();
-  });
-  if (sourceEl) sourceEl.addEventListener('input', () => {
-    clearCandidateQueue();
-    setWorkflowStep(2, '参考素材已更新，确认主题后开始生成…');
-    updateRunButtonText();
-  });
 }
 
 // ═══════════════════════════════════
@@ -1075,7 +1005,6 @@ const MOCK_REVIEW = {
 async function runDemo() {
   if (isRunning) return;
   isRunning = true;
-  setWorkflowStep(3, '正在生成脚本…');
   document.getElementById('badgeLive').textContent = '● 运行中';
   const btn = document.getElementById('runBtn');
   btn.disabled = true;
@@ -1099,12 +1028,10 @@ async function runDemo() {
       if (hasLockedTopic || !sameCandidateRun) clearCandidateQueue();
       const r = await runRealPipeline(nextCandidate ? nextCandidate.topic : null);
       document.getElementById('pipelineStatus').innerHTML = '<span style="color:#4ade80">✓ 全流程完成（真实 AI）</span>';
-      setWorkflowStep(4);
       addLog('SYS', 'tag-sys', '═══ AI 运行完成，脚本已生成，点击「↓ 导出脚本」下载 ═══');
       renderOutput(r.topic, r.scripts, r.review, r.topics);
     } else {
       await runMockPipeline();
-      setWorkflowStep(4);
     }
   } catch(e) {
     document.getElementById('pipelineStatus').innerHTML = '<span style="color:#f87171">✗ 运行失败</span>';
@@ -1114,7 +1041,7 @@ async function runDemo() {
   document.getElementById('badgeLive').textContent = '● 已就绪';
   isRunning = false;
   btn.disabled = false;
-  updateRunButtonText((window._remainingCandidates || []).length ? '' : '▶ 再次生成');
+  btn.textContent = '▶ 再次生成';
 }
 
 // ═══════════════════════════════════
@@ -1544,7 +1471,6 @@ function resetAll() {
   document.getElementById('pipelineStatus').textContent = '等待运行…';
   document.getElementById('runBtn').textContent = '▶ 开始生成';
   document.getElementById('badgeLive').textContent = '● 已就绪';
-  setWorkflowStep(1);
   addLog('SYS','tag-sys','已重置，等待运行…');
 }
 
@@ -2270,8 +2196,7 @@ function useHotSource(index) {
   document.getElementById('cfgTopic').value = title;
   document.getElementById('cfgKeyword').value = title.slice(0, 18);
   addLog('HOT', 'tag-hot', `已选择热点源作为本轮选题：「${escapeHtml(title)}」`);
-  setWorkflowStep(3, '已锁定热点源，点击开始生成…');
-  updateRunButtonText('▶ 按已选主题生成');
+  document.getElementById('runBtn').textContent = '▶ 按已选主题生成';
 }
 
 function usePlatformSource(index) {
@@ -2283,13 +2208,11 @@ function usePlatformSource(index) {
   document.getElementById('cfgKeyword').value = title.slice(0, 18);
   if (item.url) document.getElementById('cfgSourceUrl').value = item.url;
   addLog('HOT', 'tag-hot', `已选择${platformDisplayName(item.platform)}作为本轮选题：「${escapeHtml(title)}」`);
-  setWorkflowStep(3, '已锁定平台作品源，点击开始生成…');
-  updateRunButtonText('▶ 按已选主题生成');
+  document.getElementById('runBtn').textContent = '▶ 按已选主题生成';
 }
 
 
 async function loadHotSources() {
-  setWorkflowStep(2, '正在抓取热点源…');
   document.getElementById('outputPlaceholder').style.display = 'none';
   document.getElementById('outputContent').style.display = 'block';
   document.getElementById('outputMeta').textContent = '热点源抓取中…';
@@ -2347,7 +2270,6 @@ async function loadHotSources() {
 }
 
 async function loadPublicHotSources() {
-  setWorkflowStep(2, '正在抓取公开热点源…');
   document.getElementById('outputPlaceholder').style.display = 'none';
   document.getElementById('outputContent').style.display = 'block';
   document.getElementById('outputMeta').textContent = '公开热点源抓取中…';
@@ -2358,7 +2280,6 @@ async function loadPublicHotSources() {
     const data = await fetchHotTopics(80);
     const focusedTopics = focusHotTopics(data.topics || [], 80);
     renderHotSources(focusedTopics, { ...data, showPlatform: false, refreshAction: 'loadPublicHotSources()' });
-    setWorkflowStep(2, '已加载热点源，选择一条作为选题…');
     addLog('HOT', 'tag-hot', `公开热点源抓取完成：原始 ${(data.raw_total || data.topics?.length || 0)} 条，过滤后 ${focusedTopics.length} 条 ✓`);
   } catch(e) {
     document.getElementById('outputMeta').textContent = '公开热点源抓取失败';
@@ -2389,7 +2310,6 @@ async function runDouyinHotSearch() {
   document.getElementById('cfgKeyword').value = keyword;
   document.getElementById('cfgTopic').value = '';
   clearCandidateQueue();
-  setWorkflowStep(2, '正在抓取抖音热点源…');
   addLog('HOT', 'tag-hot', `准备抓取抖音平台热点源（关键词：「${escapeHtml(keyword)}」）…`);
 
   const status = await checkLocalHelperStatus(false);
@@ -2469,7 +2389,6 @@ async function runDouyinKeywordVideoSearch() {
   document.getElementById('cfgKeyword').value = keyword;
   document.getElementById('cfgTopic').value = '';
   clearCandidateQueue();
-  setWorkflowStep(2, '正在搜索关键词相关热点视频…');
   addLog('HOT', 'tag-hot', `准备搜索关键词相关热点视频（关键词：「${escapeHtml(keyword)}」）…`);
 
   const status = await checkLocalHelperStatus(false);
@@ -3097,9 +3016,6 @@ function exportScripts() {
   restoreBtn();
 }
 
-bindInputChangeHandlers();
-setWorkflowStep(1);
-updateRunButtonText();
 checkLocalHelperStatus(false);
 
 </script>
