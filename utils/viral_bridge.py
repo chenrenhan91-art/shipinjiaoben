@@ -36,9 +36,14 @@ DOUYIN_KEYWORD_GROUPS = {
     "美妆": ["美妆", "护肤", "口红", "面膜", "防晒", "彩妆", "穿搭", "变美", "医美"],
 }
 DOUYIN_MIN_VIDEO_LIKES = 10000   # 保留供参考，过滤主要依赖综合互动评分
-# 综合互动评分门槛：赞 + 评论×5 + 转发×8 + 收藏×3
-# 约等于：1万赞+正常互动比例，用于拦截无热度低质视频
-DOUYIN_MIN_ENGAGEMENT_SCORE = 15000
+# 综合互动评分：赞 + 评论×5 + 转发×8 + 收藏×3
+# 目标高热门槛仍是 15000；关键词越精准，允许更低的相对热门槛，避免小众关键词被一刀切为空。
+DOUYIN_TARGET_ENGAGEMENT_SCORE = 15000
+DOUYIN_BROAD_ENGAGEMENT_SCORE = 8000
+DOUYIN_MEDIUM_ENGAGEMENT_SCORE = 5000
+DOUYIN_SPECIFIC_ENGAGEMENT_SCORE = 3000
+DOUYIN_RELAXED_ENGAGEMENT_RATIO = 0.4
+DOUYIN_MIN_RELAXED_ENGAGEMENT_SCORE = 1200
 DOUYIN_MAX_VIDEO_AGE_DAYS = 21
 DOUYIN_DIRECT_SEARCH_MAX_TERMS = 2
 DOUYIN_INDEX_FALLBACK_MAX_SECONDS = 60
@@ -395,6 +400,48 @@ def _keyword_is_broad(keyword: str) -> bool:
     return keyword in DOUYIN_BROAD_KEYWORDS
 
 
+def _engagement_threshold_for_keyword(keyword: str) -> int:
+    keyword = clean_text(keyword)
+    if not keyword:
+        return DOUYIN_TARGET_ENGAGEMENT_SCORE
+    compact_keyword = re.sub(r"\s+", "", keyword)
+    if _keyword_is_broad(keyword):
+        return DOUYIN_BROAD_ENGAGEMENT_SCORE
+    if len(compact_keyword) >= 7 or re.search(r"\d", compact_keyword):
+        return DOUYIN_SPECIFIC_ENGAGEMENT_SCORE
+    return DOUYIN_MEDIUM_ENGAGEMENT_SCORE
+
+
+def _relaxed_engagement_threshold_for_keyword(keyword: str) -> int:
+    primary = _engagement_threshold_for_keyword(keyword)
+    return max(DOUYIN_MIN_RELAXED_ENGAGEMENT_SCORE, int(primary * DOUYIN_RELAXED_ENGAGEMENT_RATIO))
+
+
+def _engagement_policy_for_keyword(keyword: str) -> str:
+    keyword = clean_text(keyword)
+    if not keyword:
+        return "target"
+    if _keyword_is_broad(keyword):
+        return "broad_adaptive"
+    compact_keyword = re.sub(r"\s+", "", keyword)
+    if len(compact_keyword) >= 7 or re.search(r"\d", compact_keyword):
+        return "specific_adaptive"
+    return "medium_adaptive"
+
+
+def _set_video_engagement_status(status: dict[str, Any], keyword: str, relaxed_used: bool = False) -> None:
+    primary = _engagement_threshold_for_keyword(keyword)
+    relaxed = _relaxed_engagement_threshold_for_keyword(keyword)
+    policy = _engagement_policy_for_keyword(keyword)
+    if relaxed_used:
+        policy = f"{policy}:relaxed"
+    status["douyin_video_target_engagement"] = DOUYIN_TARGET_ENGAGEMENT_SCORE
+    status["douyin_video_primary_min_engagement"] = primary
+    status["douyin_video_relaxed_min_engagement"] = relaxed
+    status["douyin_video_min_engagement"] = relaxed if relaxed_used else primary
+    status["douyin_video_engagement_policy"] = policy
+
+
 def _keyword_terms(keyword: str) -> list[str]:
     keyword = clean_text(keyword)
     if not keyword:
@@ -501,10 +548,29 @@ def _core_video_score(item: dict[str, Any]) -> int:
     )
 
 
-def _video_item_passes_heat(item: dict[str, Any]) -> bool:
+def _source_quality_score(item: dict[str, Any], keyword: str = "") -> tuple[int, int, int, int, int]:
+    script_chars = len(clean_text(str(item.get("script") or "")))
+    source_type = str(item.get("source_type") or "")
+    if item.get("source_type") == "hot_word":
+        relevance = _hot_word_relevance(item, keyword) if keyword else 0
+    else:
+        relevance = _video_keyword_relevance(item, keyword, _keyword_terms(keyword)) if keyword else 0
+    direct_priority = 1 if "direct" in source_type else 0
+    script_bucket = 3 if script_chars >= 180 else 2 if script_chars >= 80 else 1 if script_chars >= 30 else 0
+    heat = _core_video_score(item) or int(item.get("hot_value") or item.get("heat_score") or 0)
+    detail_priority = 1 if item.get("detail_resolved") else 0
+    return direct_priority, relevance, script_bucket, heat, detail_priority
+
+
+def _sort_source_items(items: list[dict[str, Any]], keyword: str = "") -> list[dict[str, Any]]:
+    return sorted(items, key=lambda item: _source_quality_score(item, keyword), reverse=True)
+
+
+def _video_item_passes_heat(item: dict[str, Any], keyword: str = "", relaxed: bool = False) -> bool:
     # 优先使用已缓存的 core_score，避免重复计算
     score = item.get("core_score") or _core_video_score(item)
-    return score >= DOUYIN_MIN_ENGAGEMENT_SCORE
+    threshold = _relaxed_engagement_threshold_for_keyword(keyword) if relaxed else _engagement_threshold_for_keyword(keyword)
+    return score >= threshold
 
 
 def _video_item_is_recent(item: dict[str, Any]) -> bool:
@@ -520,8 +586,8 @@ def _timestamp_is_recent(timestamp: int) -> bool:
     return now - timedelta(days=DOUYIN_MAX_VIDEO_AGE_DAYS) <= published_at <= now + timedelta(days=1)
 
 
-def _video_item_passes_constraints(item: dict[str, Any]) -> bool:
-    return _video_item_passes_heat(item) and _video_item_is_recent(item)
+def _video_item_passes_constraints(item: dict[str, Any], keyword: str = "", relaxed: bool = False) -> bool:
+    return _video_item_passes_heat(item, keyword, relaxed) and _video_item_is_recent(item)
 
 
 def _extract_hashtag_terms(*texts: str, limit: int = 8) -> list[str]:
@@ -671,7 +737,8 @@ async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, s
     searched_terms: list[str] = []
     term_states: dict[str, str] = {}
     items: list[dict[str, Any]] = []
-    best_effort_items: list[dict[str, Any]] = []
+    relaxed_fallback_items: list[dict[str, Any]] = []
+    stale_fallback_items: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     filtered_low_heat = 0
     filtered_old = 0
@@ -739,32 +806,47 @@ async def _search_indexed_douyin_videos_by_terms(terms: list[str], limit: int, s
             for tag in related_tags:
                 if tag not in term_states and tag not in pending_terms and len(pending_terms) + len(searched_terms) < max_terms:
                     pending_terms.append(tag)
-            if item.get("core_score") and _video_item_passes_constraints(item):
-                items.append(item)
-            elif item.get("core_score") and _video_item_passes_heat(item):
-                # 有热度但可能超期，作为最佳兜底保留
-                best_effort_items.append(item)
-                filtered_old += 1
-            elif item.get("core_score"):
-                if not _video_item_passes_heat(item):
+            if item.get("core_score"):
+                heat_keyword = keyword or term
+                is_recent = _video_item_is_recent(item)
+                if _video_item_passes_constraints(item, heat_keyword):
+                    items.append(item)
+                elif _video_item_passes_heat(item, heat_keyword):
+                    # 有主门槛热度但可能超期，作为最佳兜底保留
+                    stale_fallback_items.append(item)
+                    if not is_recent:
+                        filtered_old += 1
+                elif is_recent and _video_item_passes_heat(item, heat_keyword, relaxed=True):
+                    # 低于主门槛但仍有明显互动，用于避免精准关键词无结果
+                    relaxed_fallback_items.append(item)
                     filtered_low_heat += 1
-                if not _video_item_is_recent(item):
-                    filtered_old += 1
+                else:
+                    if not _video_item_passes_heat(item, heat_keyword):
+                        filtered_low_heat += 1
+                    if not is_recent:
+                        filtered_old += 1
             await asyncio.sleep(0.4)
             if len(_dedupe(items, limit)) >= limit:
                 break
 
     items.sort(key=lambda item: (item.get("keyword_relevance") or 0, item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
     result = _dedupe(items, limit)
-    if not result and best_effort_items:
-        best_effort_items.sort(key=lambda item: (item.get("keyword_relevance") or 0, item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
-        result = _dedupe(best_effort_items, limit)
-        status["douyin_index_fallback"] = "ok:best_effort"
+    relaxed_used = False
+    if len(result) < limit and relaxed_fallback_items:
+        relaxed_fallback_items.sort(key=lambda item: (item.get("keyword_relevance") or 0, item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
+        result = _dedupe([*result, *relaxed_fallback_items], limit)
+        relaxed_used = True
+        status["douyin_video_relaxed_fallback"] = "ok"
+        status["douyin_index_fallback"] = "ok:relaxed_heat"
+    if not result and stale_fallback_items:
+        stale_fallback_items.sort(key=lambda item: (item.get("keyword_relevance") or 0, item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
+        result = _dedupe(stale_fallback_items, limit)
+        status["douyin_index_fallback"] = "ok:best_effort_old"
     status["douyin_index_term_status"] = term_states
     status["douyin_index_terms_used"] = searched_terms
     if "douyin_index_fallback" not in status:
         status["douyin_index_fallback"] = "ok" if result else "empty"
-    status["douyin_video_min_engagement"] = DOUYIN_MIN_ENGAGEMENT_SCORE
+    _set_video_engagement_status(status, keyword or (terms[0] if terms else ""), relaxed_used=relaxed_used)
     status["douyin_video_max_age_days"] = DOUYIN_MAX_VIDEO_AGE_DAYS
     status["douyin_video_filtered_low_heat"] = filtered_low_heat
     status["douyin_video_filtered_old"] = filtered_old
@@ -778,9 +860,12 @@ async def _search_douyin_videos_by_terms(keyword: str, limit: int, status: dict[
         status["douyin_video_fallback"] = "empty:no_keyword"
         return []
     found: list[dict[str, Any]] = []
-    best_effort_direct: list[dict[str, Any]] = []
+    relaxed_direct: list[dict[str, Any]] = []
+    stale_direct: list[dict[str, Any]] = []
     term_states: dict[str, str] = {}
     filtered_relevance = 0
+    filtered_low_heat = 0
+    filtered_old = 0
     direct_search_status = str(status.get("douyin") or "")
     direct_terms = [] if direct_search_status.startswith("unavailable") else terms[:DOUYIN_DIRECT_SEARCH_MAX_TERMS]
     if not direct_terms and direct_search_status:
@@ -800,10 +885,19 @@ async def _search_douyin_videos_by_terms(keyword: str, limit: int, status: dict[
             if not _video_matches_keyword(item, keyword, terms):
                 filtered_relevance += 1
                 continue
-            if _video_item_passes_constraints(item):
+            if _video_item_passes_constraints(item, keyword):
                 found.append(item)
-            elif _video_item_passes_heat(item):
-                best_effort_direct.append(item)
+            elif _video_item_is_recent(item) and _video_item_passes_heat(item, keyword, relaxed=True):
+                relaxed_direct.append(item)
+                filtered_low_heat += 1
+            elif _video_item_passes_heat(item, keyword):
+                stale_direct.append(item)
+                filtered_old += 1
+            else:
+                if not _video_item_passes_heat(item, keyword):
+                    filtered_low_heat += 1
+                if not _video_item_is_recent(item):
+                    filtered_old += 1
         if len(_dedupe(found, limit * 2)) >= limit * 2:
             break
     unique = _dedupe(found, limit * 3)
@@ -812,16 +906,25 @@ async def _search_douyin_videos_by_terms(keyword: str, limit: int, status: dict[
     if len(result) < limit:
         indexed_items = await _search_indexed_douyin_videos_by_terms(terms, limit, status, keyword=keyword)
         result = _dedupe([*result, *indexed_items], limit)
-    if not result and best_effort_direct:
-        best_effort_direct.sort(key=lambda item: (item.get("keyword_relevance") or 0, item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
-        result = _dedupe(best_effort_direct, limit)
-        status["douyin_video_fallback"] = "ok:best_effort_direct"
+    relaxed_used = bool(status.get("douyin_video_relaxed_fallback"))
+    if len(result) < limit and relaxed_direct:
+        relaxed_direct.sort(key=lambda item: (item.get("keyword_relevance") or 0, item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
+        result = _dedupe([*result, *relaxed_direct], limit)
+        relaxed_used = True
+        status["douyin_video_relaxed_fallback"] = "ok"
+        status["douyin_video_fallback"] = "ok:relaxed_direct"
+    if not result and stale_direct:
+        stale_direct.sort(key=lambda item: (item.get("keyword_relevance") or 0, item.get("core_score") or 0, item.get("likes") or 0), reverse=True)
+        result = _dedupe(stale_direct, limit)
+        status["douyin_video_fallback"] = "ok:best_effort_old_direct"
     status["douyin_video_terms"] = terms
     status["douyin_video_term_status"] = term_states
     status["douyin_video_filtered_relevance"] = filtered_relevance + int(status.get("douyin_video_filtered_relevance") or 0)
+    status["douyin_video_filtered_low_heat"] = filtered_low_heat + int(status.get("douyin_video_filtered_low_heat") or 0)
+    status["douyin_video_filtered_old"] = filtered_old + int(status.get("douyin_video_filtered_old") or 0)
     if "douyin_video_fallback" not in status:
         status["douyin_video_fallback"] = "ok" if result else "empty"
-    status["douyin_video_min_engagement"] = DOUYIN_MIN_ENGAGEMENT_SCORE
+    _set_video_engagement_status(status, keyword, relaxed_used=relaxed_used)
     status["douyin_video_max_age_days"] = DOUYIN_MAX_VIDEO_AGE_DAYS
     return result
 
@@ -1146,7 +1249,8 @@ def _items_to_source_text(items: list[dict[str, Any]], public_text: str = "") ->
                 f"来源{idx}｜平台：{item['platform']}｜来源：{item.get('source', '')}｜标题：{item['title']}｜点赞：{item.get('likes', 0)}｜评论：{item.get('comment_count', 0)}｜分享：{item.get('share_count', 0)}｜收藏：{item.get('collect_count', 0)}｜链接：{item.get('url', '')}"
             )
         if item.get("script"):
-            lines.append(f"文案/字幕素材：{item['script'][:500]}")
+            script_limit = 1200 if str(item.get("source_type") or "").startswith("direct") else 800
+            lines.append(f"文案/字幕素材：{item['script'][:script_limit]}")
         if item.get("comments_hot"):
             lines.append("热评：" + "；".join(item["comments_hot"][:3]))
     if public_text:
@@ -1168,6 +1272,7 @@ async def search_viral_content(keyword: str, source_url: str = "", limit: int = 
             items.extend(await _search_douyin_videos_by_terms(keyword, limit, status))
         status["douyin"] = "ok:keyword_videos" if items else "empty:keyword_videos"
         items = await _enrich_douyin_items(_dedupe(items, limit), status)
+        items = _sort_source_items(items, keyword)
         search_links = [
             {"label": "抖音关键词搜索", "url": DOUYIN_SEARCH_URL.format(keyword=quote(keyword))},
         ] if keyword else []
@@ -1187,8 +1292,13 @@ async def search_viral_content(keyword: str, source_url: str = "", limit: int = 
             },
         }
 
-    items.extend(await _detail_douyin(source_url, status))
-    items.extend(await _detail_xhs(source_url, status))
+    direct_items = [
+        *(await _detail_douyin(source_url, status)),
+        *(await _detail_xhs(source_url, status)),
+    ]
+    for item in direct_items:
+        item["source_type"] = "direct_reference"
+    items.extend(direct_items)
     if keyword:
         items.extend(await _search_douyin(keyword, limit, status))
     if keyword and not any(item.get("platform") == "douyin" for item in items):
@@ -1209,6 +1319,7 @@ async def search_viral_content(keyword: str, source_url: str = "", limit: int = 
     public_text = await _extract_public_page(source_url, status) if source_url else ""
 
     items = await _enrich_douyin_items(_dedupe(items, limit), status)
+    items = _sort_source_items(items, keyword)
     search_links = [
         {"label": "抖音关键词搜索", "url": DOUYIN_SEARCH_URL.format(keyword=quote(keyword))},
         {"label": "小红书关键词搜索", "url": XHS_SEARCH_URL.format(keyword=quote(keyword))},
@@ -1405,10 +1516,16 @@ async def extract_source_content(source_url: str) -> dict[str, Any]:
         }
 
     items: list[dict[str, Any]] = []
-    items.extend(await _detail_douyin(source_url, status))
-    items.extend(await _detail_xhs(source_url, status))
+    direct_items = [
+        *(await _detail_douyin(source_url, status)),
+        *(await _detail_xhs(source_url, status)),
+    ]
+    for item in direct_items:
+        item["source_type"] = "direct_reference"
+    items.extend(direct_items)
     public_text = await _extract_public_page(source_url, status)
     items = await _enrich_douyin_items(_dedupe(items, 3), status)
+    items = _sort_source_items(items)
     source_text = _items_to_source_text(items, public_text)
     return {
         "ok": bool(source_text),

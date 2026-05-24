@@ -1059,8 +1059,44 @@ function countOralChars(value) {
   return [...text].filter(ch => /[\u3400-\u9fffA-Za-z0-9]/.test(ch)).length;
 }
 
+function normalizedSearchText(value) {
+  return String(value || '').toLowerCase().replace(/\s+/g, '');
+}
+
+function searchTerms(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  const compact = raw.replace(/\s+/g, '');
+  const parts = raw.split(/[\s,，、;；|/]+/);
+  return [...new Set([raw, compact, ...parts]
+    .map(term => term.trim())
+    .filter(term => countOralChars(term) >= 2 || /^[A-Za-z0-9]{2,}$/i.test(term)))]
+    .slice(0, 8);
+}
+
+function keywordMatchScore(target={}, keyword='') {
+  const terms = searchTerms(keyword);
+  if (!terms.length) return 0;
+  const title = String(target.title || target.topic || '');
+  const summary = String(target.summary || target.script || '');
+  const titleCompact = normalizedSearchText(title);
+  const summaryCompact = normalizedSearchText(summary);
+  let score = 0;
+  terms.forEach((term, index) => {
+    const termCompact = normalizedSearchText(term);
+    if (!termCompact) return;
+    const primary = index === 0;
+    if (titleCompact.includes(termCompact)) score += primary ? 90 : 28;
+    else if (summaryCompact.includes(termCompact)) score += primary ? 42 : 14;
+  });
+  return score;
+}
+
 function extractPrimarySourceCopy(sources=[], sourceContent='') {
-  const sourceWithScript = (sources || []).find(item => countOralChars(item?.script) >= 30);
+  const sourceWithScript = (sources || [])
+    .map(item => ({ item, chars: countOralChars(item?.script) }))
+    .filter(entry => entry.chars >= 30)
+    .sort((a, b) => b.chars - a.chars)[0]?.item;
   if (sourceWithScript) return String(sourceWithScript.script || '').trim();
   const content = String(sourceContent || '').trim();
   const materialMatch = content.match(/文案\/字幕素材：([\s\S]*?)(?:\n热评：|\n来源\d+｜|$)/);
@@ -1750,6 +1786,25 @@ function focusHotTopics(topics=[], limit=80) {
     .map(entry => entry.item);
 }
 
+function rankTopicsForKeyword(topics=[], keyword='', limit=6) {
+  if (!String(keyword || '').trim()) return (topics || []).slice(0, limit);
+  const ranked = (topics || [])
+    .map(item => ({
+      item,
+      keywordScore: keywordMatchScore({ title: item.title || item.topic || '', summary: item.summary || '' }, keyword),
+      focusScore: hotTopicFocusScore(item),
+    }))
+    .filter(entry => entry.keywordScore > 0)
+    .sort((a, b) =>
+      (b.keywordScore - a.keywordScore)
+      || (b.focusScore - a.focusScore)
+      || Number(b.item.heat_score || 0) - Number(a.item.heat_score || 0)
+    )
+    .slice(0, limit)
+    .map(entry => entry.item);
+  return ranked.length ? ranked : (topics || []).slice(0, limit);
+}
+
 function firstTextValue(obj, keys) {
   for (const key of keys) {
     const value = obj?.[key];
@@ -1827,6 +1882,47 @@ function calcEngagementScore(item) {
     : likes + comments * 5 + shares * 8 + collects * 3;
 }
 
+function sourceItemKey(item={}) {
+  return item.url || item.raw_id || `${item.platform || ''}:${String(item.title || item.script || '').slice(0, 36)}`;
+}
+
+function sourceQualityScore(item={}, keyword='') {
+  const scriptChars = countOralChars(item.script || '');
+  const engagement = calcEngagementScore(item);
+  const keywordScore = keywordMatchScore({
+    title: item.title || '',
+    summary: `${item.script || ''} ${(item.comments_hot || []).join(' ')}`,
+  }, keyword);
+  let score = keywordScore + Math.min(45, Math.log10(engagement + 1) * 9);
+  if (scriptChars >= 180) score += 50;
+  else if (scriptChars >= 80) score += 34;
+  else if (scriptChars >= 30) score += 18;
+  else if (item.source_type === 'hot_word') score -= 24;
+  if (item.url) score += 4;
+  if (item.detail_resolved) score += 8;
+  if (String(item.source_type || '').includes('direct')) score += 100;
+  return score;
+}
+
+function sortScrapedSources(items=[], keyword='') {
+  return [...(items || [])].sort((a, b) =>
+    (sourceQualityScore(b, keyword) - sourceQualityScore(a, keyword))
+    || (calcEngagementScore(b) - calcEngagementScore(a))
+  );
+}
+
+function mergeSourceItems(primary=[], extra=[]) {
+  const seen = new Set();
+  const merged = [];
+  [...(primary || []), ...(extra || [])].forEach(item => {
+    const key = sourceItemKey(item);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    merged.push(item);
+  });
+  return merged;
+}
+
 function formatPlatformStats(item) {
   const parts = [];
   const heat = Number(item.hot_value || item.heat_score || 0);
@@ -1844,6 +1940,21 @@ function formatPlatformStats(item) {
     parts.push(`综合热度 ${engScore.toLocaleString('zh-CN')}`);
   }
   return parts.join(' · ') || (item.source_type === 'hot_word' ? '抖音热榜' : '作品级来源');
+}
+
+function renderEngagementPolicyPill(status={}) {
+  const min = Number(status.douyin_video_min_engagement || 0);
+  if (!min) return '';
+  const target = Number(status.douyin_video_target_engagement || 0);
+  const policy = String(status.douyin_video_engagement_policy || '');
+  const relaxedUsed = policy.includes('relaxed') || status.douyin_video_relaxed_fallback;
+  let label = '互动评分门槛';
+  if (policy.includes('broad')) label = '互动评分门槛：宽词自适应';
+  else if (policy.includes('specific')) label = '互动评分门槛：精准词自适应';
+  else if (policy.includes('medium')) label = '互动评分门槛：自适应';
+  const targetText = target && target !== min ? `（目标≥${target.toLocaleString('zh-CN')}）` : '';
+  const fallbackText = relaxedUsed ? ' · 最佳可用' : '';
+  return `<span class="platform-pill${relaxedUsed ? ' warn' : ''}">${label} ≥${min.toLocaleString('zh-CN')}${targetText}${fallbackText}</span>`;
 }
 
 function renderPlatformSourceSection(platform={}) {
@@ -1883,7 +1994,7 @@ function renderPlatformSourceSection(platform={}) {
       ${status.douyin_hot === 'ok' ? '<span class="platform-pill ok">抖音热榜：已接入</span>' : ''}
       ${status.douyin_video_fallback === 'ok' ? '<span class="platform-pill ok">相关视频：按核心数据排序</span>' : ''}
       ${keywordVideoMode ? '<span class="platform-pill ok">视频索引：关键词相关</span>' : ''}
-      ${status.douyin_video_min_engagement ? `<span class="platform-pill">互动评分门槛：≥${Number(status.douyin_video_min_engagement).toLocaleString('zh-CN')}</span>` : ''}
+      ${renderEngagementPolicyPill(status)}
       ${status.douyin_video_max_age_days ? `<span class="platform-pill">时间范围：近${Number(status.douyin_video_max_age_days).toLocaleString('zh-CN')}天</span>` : ''}
       ${status.douyin_video_filtered_low_heat ? `<span class="platform-pill warn">已过滤低热视频：${Number(status.douyin_video_filtered_low_heat).toLocaleString('zh-CN')}条</span>` : ''}
       ${status.douyin_video_filtered_old ? `<span class="platform-pill warn">已过滤过期视频：${Number(status.douyin_video_filtered_old).toLocaleString('zh-CN')}条</span>` : ''}
@@ -2247,7 +2358,7 @@ async function loadHotSources() {
 
     try {
       const bridge = await fetchViralBridge(platformKeyword, '');
-      const items = bridge.items || [];
+      const items = sortScrapedSources(bridge.items || [], platformKeyword);
       renderHotSources(focusedTopics, {
         ...data,
         platform: {
@@ -2366,7 +2477,7 @@ async function runDouyinHotSearch() {
   renderDouyinPlatformSources({ keyword, loading: true, items: [], status: { douyin: 'starting' }, searchLinks: [] });
   try {
     const bridge = await fetchViralBridge(keyword, '');
-    const items = (bridge.items || []).filter(item => item.platform === 'douyin');
+    const items = sortScrapedSources((bridge.items || []).filter(item => item.platform === 'douyin'), keyword);
     const searchLinks = (bridge.search_links || []).filter(link => String(link.label || '').includes('抖音'));
     renderDouyinPlatformSources({
       keyword,
@@ -2451,7 +2562,7 @@ async function runDouyinKeywordVideoSearch() {
   });
   try {
     const bridge = await fetchViralBridge(keyword, '', { videoOnly: true });
-    const items = (bridge.items || []).filter(item => item.platform === 'douyin');
+    const items = sortScrapedSources((bridge.items || []).filter(item => item.platform === 'douyin'), keyword);
     const searchLinks = (bridge.search_links || []).filter(link => String(link.label || '').includes('抖音'));
     renderDouyinPlatformSources({
       keyword,
@@ -2509,8 +2620,7 @@ async function runRealPipeline(forceTopic) {
         const hotData = await fetchHotTopics(60);
         const hotTopics = focusHotTopics(hotData.topics || [], 60);
         window._hotSources = hotTopics;
-        const matched = keyword ? hotTopics.filter(t => `${t.title || ''} ${t.summary || ''}`.includes(keyword)) : hotTopics;
-        const candidates = (matched.length ? matched : hotTopics).slice(0, 6);
+        const candidates = keyword ? rankTopicsForKeyword(hotTopics, keyword, 6) : hotTopics.slice(0, 6);
         topics = candidates.map(t => ({
           topic: t.title,
           heat_score: t.heat_score || 80,
@@ -2616,19 +2726,40 @@ async function runRealPipeline(forceTopic) {
   const bridgeKeyword = manualTopic || keyword || winner.topic;
   addLog('CONTENT', 'tag-content', `连接本地 GitHub 采集桥接服务（关键词：「${bridgeKeyword}」）…`);
   try {
-    const bridge = await fetchViralBridge(bridgeKeyword, sourceUrl);
-    scrapedSources = bridge.items || [];
-    const bridgeText = bridge.source_text || '';
+    const bridgeSourceUrl = sourceUrl && sourceContent ? '' : sourceUrl;
+    const bridge = await fetchViralBridge(bridgeKeyword, bridgeSourceUrl);
+    scrapedSources = sortScrapedSources(bridge.items || [], bridgeKeyword);
+    let bridgeText = bridge.source_text || '';
+    let bridgeStatus = bridge.status || {};
+    let bridgeLinks = bridge.search_links || [];
+    const hasUsableSourceCopy = scrapedSources.some(item => countOralChars(item?.script) >= 30) || countOralChars(referenceScript) >= 30;
+    if (!hasUsableSourceCopy && bridgeKeyword) {
+      try {
+        addLog('CONTENT', 'tag-content', '普通来源缺少可用文案，补充搜索关键词相关热点视频…');
+        const videoBridge = await fetchViralBridge(bridgeKeyword, '', { videoOnly: true, timeout: 180000 });
+        const videoSources = sortScrapedSources(videoBridge.items || [], bridgeKeyword);
+        if (videoSources.length) {
+          scrapedSources = sortScrapedSources(mergeSourceItems(scrapedSources, videoSources), bridgeKeyword);
+          bridgeText = [bridgeText, videoBridge.source_text ? `关键词相关视频补充：\n${videoBridge.source_text}` : ''].filter(Boolean).join('\n\n');
+          bridgeStatus = { ...bridgeStatus, ...(videoBridge.status || {}), source_video_fallback: 'ok' };
+          bridgeLinks = mergeSourceItems(bridgeLinks, videoBridge.search_links || []);
+          addLog('CONTENT', 'tag-content', `已补充关键词相关视频：${videoSources.length} 条 ✓`);
+        }
+      } catch(videoError) {
+        bridgeStatus = { ...bridgeStatus, source_video_fallback: `unavailable:${videoError.message}` };
+        addLog('CONTENT', 'tag-content', `关键词相关视频补充未完成（${videoError.message}）`);
+      }
+    }
     if (!sourceContent) {
       sourceContent = bridgeText;
     } else if (bridgeText) {
       sourceContent = `${sourceContent}\n\n同类爆款参考：\n${bridgeText}`.slice(0, 5000);
     }
     window._sourceLinks.scrapedSources = scrapedSources;
-    window._sourceLinks.toolStatus = bridge.status || {};
-    if (bridge.search_links?.length) {
+    window._sourceLinks.toolStatus = bridgeStatus;
+    if (bridgeLinks.length) {
       const existing = new Set(window._sourceLinks.searchLinks.map(l => l.url));
-      bridge.search_links.forEach(l => { if (!existing.has(l.url)) window._sourceLinks.searchLinks.push(l); });
+      bridgeLinks.forEach(l => { if (!existing.has(l.url)) window._sourceLinks.searchLinks.push(l); });
     }
     if (scrapedSources.length) {
       addLog('CONTENT', 'tag-content', `真实来源抓取完成：${scrapedSources.length} 条（含链接/点赞/文案字段）✓`);
