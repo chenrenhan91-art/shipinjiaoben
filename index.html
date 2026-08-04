@@ -623,10 +623,10 @@ const FALLBACK_PROVIDERS = [
   {id:'custom', name:'自定义 OpenAI 兼容', base_url:'', models:[], hint:'任意 /v1/chat/completions 服务'},
 ];
 let LLM_PROVIDERS = FALLBACK_PROVIDERS.slice();
-// file:// 打开时相对路径 /api 会失败，自动回退到本机服务
-const LOCAL_API_BASE = (location.protocol === 'file:' || !location.origin || location.origin === 'null')
-  ? 'http://127.0.0.1:8765'
-  : '';
+// 本机 uvicorn（同源）用相对路径；GitHub Pages / file:// 则打本机 API
+const API_HOST = 'http://127.0.0.1:8765';
+const IS_LOCAL_APP = location.protocol === 'http:' && (location.hostname === '127.0.0.1' || location.hostname === 'localhost');
+const LOCAL_API_BASE = IS_LOCAL_APP ? '' : API_HOST;
 let mode = 1;
 let isRunning = false;
 let _modelIdx = 0;
@@ -979,8 +979,7 @@ async function fetchHotTopics(limit=80, q=''){
   } catch (e) {
     throw new Error(
       `无法连接本机服务（${LOCAL_API_BASE || location.origin}）。` +
-      '请先在项目目录运行：uvicorn app.main:app --host 127.0.0.1 --port 8765，' +
-      '然后访问 http://127.0.0.1:8765 （不要用 file:// 直接打开 HTML）'
+      '请先运行：uvicorn app.main:app --host 127.0.0.1 --port 8765'
     );
   }
   if (!res.ok) throw new Error(`热点接口 HTTP ${res.status}`);
@@ -993,7 +992,7 @@ async function checkLocalApi(){
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (LOCAL_API_BASE) {
-      addLog('SYS','tag-sys', `已通过 file:// 打开，自动连接本机服务 ${LOCAL_API_BASE} ✓`);
+      addLog('SYS','tag-sys', `页面非本机同源，已连接 API ${LOCAL_API_BASE} ✓`);
     } else {
       addLog('SYS','tag-sys', `本机服务已连接 ✓（${(data.platforms||[]).length} 个热点源）`);
     }

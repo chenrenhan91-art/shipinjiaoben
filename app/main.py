@@ -1,20 +1,19 @@
-"""MVP 入口：前端页面 + 热点 API + 主流模型 LLM 代理。
+"""MVP 入口：根目录页面 + 热点 API + 主流模型 LLM 代理。
 
 启动：
   pip install -r requirements.txt
   uvicorn app.main:app --host 127.0.0.1 --port 8765
 
 浏览器打开 http://127.0.0.1:8765
+GitHub Pages 默认呈现根目录 index.html（完整能力需本机 API）。
 """
 from __future__ import annotations
 
 from pathlib import Path
-import json
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 
 from app.hot_topics import fetch_all_hot_topics
 from app.llm_proxy import LLMChatRequest, chat_completions, provider_catalog
@@ -22,9 +21,9 @@ from app.prompts import get_prompts
 from app.topic_filter import filter_by_keyword, rank_by_heat
 
 ROOT = Path(__file__).resolve().parent.parent
-STATIC = ROOT / "static"
+INDEX = ROOT / "index.html"
 
-app = FastAPI(title="短视频爆款脚本 MVP", version="0.5.0")
+app = FastAPI(title="短视频爆款脚本 MVP", version="0.6.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -36,7 +35,7 @@ app.add_middleware(
 
 @app.middleware("http")
 async def allow_private_network_access(request, call_next):
-    """允许 file:// 或公网页面对本机 127.0.0.1 的请求（Chrome Private Network Access）。"""
+    """允许 GitHub Pages / file:// 对本机 127.0.0.1 的请求（Chrome Private Network Access）。"""
     if request.method == "OPTIONS" and request.headers.get("access-control-request-private-network") == "true":
         from fastapi.responses import Response
 
@@ -78,14 +77,6 @@ async def llm_providers() -> dict:
 @app.get("/api/prompts")
 async def prompts() -> dict:
     return {"ok": True, "prompts": get_prompts()}
-
-
-@app.get("/api/prompts/ab-report")
-async def prompts_ab_report() -> dict:
-    path = ROOT / "app" / "ab_results.json"
-    if not path.exists():
-        return {"ok": False, "error": "尚未生成 A/B 报告"}
-    return {"ok": True, "report": json.loads(path.read_text(encoding="utf-8"))}
 
 
 @app.post("/api/llm/chat")
@@ -139,10 +130,7 @@ async def hot_topics(
 
 @app.get("/")
 async def index() -> FileResponse:
-    return FileResponse(STATIC / "index.html")
-
-
-app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
+    return FileResponse(INDEX)
 
 
 if __name__ == "__main__":

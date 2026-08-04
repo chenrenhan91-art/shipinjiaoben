@@ -1,10 +1,4 @@
-"""短视频脚本流水线提示词（经真实热点 A/B 对照后固化胜出版 B）。
-
-评测摘要（DeepSeek + 跨平台真实热榜，事件去重 5 组，2026-08-04）：
-- A 基线短指令 overall=8.29，1 胜
-- B 结构化优化 overall=8.95，4 胜
-- B 在合规、封面规范、主题锚定上更稳；线上仅保留 B
-"""
+"""短视频脚本流水线提示词（结构化胜出版）。"""
 from __future__ import annotations
 
 from typing import Any, Dict
