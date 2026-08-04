@@ -14,9 +14,10 @@ venv/
 .venv/
 env/
 
-# 生成的脚本文件（可选，按需注释掉）
+# 生成的脚本文件
 脚本_*.docx
 脚本_*.md
+脚本_*.html
 
 # macOS 系统文件
 .DS_Store

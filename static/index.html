@@ -1,0 +1,1453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>短视频爆款脚本 AI Agent</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --bg2: #1a1d27;
+  --bg3: #23273a;
+  --border: #2e3354;
+  --accent: #5b6af8;
+  --green: #22c55e;
+  --yellow: #f59e0b;
+  --red: #ef4444;
+  --text: #e2e8f0;
+  --muted: #6b7280;
+  --card: #1e2235;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  font-size: 14px;
+}
+
+/* ── 顶栏 ── */
+.topbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 28px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 100;
+}
+.logo {
+  font-size: 18px; font-weight: 700;
+  background: linear-gradient(135deg, #5b6af8, #8b5cf6, #ec4899);
+  background-clip: text;
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  white-space: nowrap;
+}
+.badge {
+  font-size: 11px; padding: 2px 8px; border-radius: 20px;
+  font-weight: 600; letter-spacing: 0.5px;
+}
+.badge-mode { background: rgba(91,106,248,.2); color: #818cf8; border: 1px solid rgba(91,106,248,.4); }
+.badge-live { background: rgba(34,197,94,.15); color: #4ade80; border: 1px solid rgba(34,197,94,.3); }
+.spacer { flex: 1; }
+.topbar-actions { display: flex; gap: 10px; }
+.btn {
+  padding: 7px 16px; border-radius: 8px; cursor: pointer;
+  font-size: 13px; font-weight: 600; border: none; transition: all .2s;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: #4a58e8; transform: translateY(-1px); }
+.btn-primary:disabled { background: #3a3f60; color: #6b7280; cursor: not-allowed; transform: none; }
+.btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
+.btn-outline:hover { border-color: var(--accent); color: #818cf8; }
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+
+/* ── 主体布局 ── */
+.main { display: grid; grid-template-columns: 280px 1fr; gap: 0; height: calc(100vh - 53px); }
+
+/* ── 左侧边栏 ── */
+.sidebar {
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 20px 16px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+.sidebar-title {
+  font-size: 11px; font-weight: 700; letter-spacing: 1px;
+  color: var(--muted); text-transform: uppercase; margin-bottom: 12px;
+}
+.mode-tabs { display: flex; gap: 0; background: var(--bg3); border-radius: 8px; padding: 3px; }
+.mode-tab {
+  flex: 1; text-align: center; padding: 7px 4px; border-radius: 6px;
+  cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); transition: all .2s;
+}
+.mode-tab.active { background: var(--accent); color: #fff; }
+.config-row { margin-bottom: 12px; }
+.config-label { font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+.config-input {
+  width: 100%; background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 7px; padding: 8px 10px; color: var(--text); font-size: 13px;
+  outline: none; transition: border-color .2s;
+}
+.config-input:focus { border-color: var(--accent); }
+.config-input::placeholder { color: var(--muted); }
+select.config-input option { background: var(--bg3); }
+.sidebar-full-control { width: 100%; margin-bottom: 8px; }
+.sidebar-link-control { display: block; text-align: center; text-decoration: none; }
+.hot-source-hint { font-size: 11px; color: var(--muted); line-height: 1.6; }
+/* ── 右侧内容 ── */
+.content { overflow-y: auto; display: flex; flex-direction: column; }
+
+/* ── Agent 流水线 ── */
+.pipeline-section {
+  padding: 20px 24px 16px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+}
+.pipeline-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.pipeline-title { font-size: 15px; font-weight: 700; }
+.pipeline-flow {
+  display: flex; align-items: stretch; gap: 0;
+  overflow-x: auto; padding-bottom: 4px;
+}
+.agent-node {
+  flex-shrink: 0;
+  display: flex; flex-direction: column; align-items: center;
+  position: relative;
+}
+.agent-card {
+  width: 110px; background: var(--card);
+  border: 1.5px solid var(--border); border-radius: 10px;
+  padding: 12px 8px; text-align: center;
+  transition: all .3s; cursor: default;
+  position: relative; overflow: hidden;
+}
+.agent-card::before {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(135deg, transparent, rgba(91,106,248,.06));
+  opacity: 0; transition: opacity .3s;
+}
+.agent-card.active::before { opacity: 1; }
+.agent-card.active { border-color: var(--accent); box-shadow: 0 0 16px rgba(91,106,248,.3); }
+.agent-card.done { border-color: var(--green); }
+.agent-card.done .agent-icon { filter: none; }
+.agent-icon { font-size: 24px; margin-bottom: 6px; display: block; }
+.agent-name { font-size: 11px; font-weight: 700; color: var(--text); }
+.agent-desc { font-size: 10px; color: var(--muted); margin-top: 3px; line-height: 1.3; }
+.agent-status {
+  margin-top: 6px; font-size: 10px; font-weight: 600;
+  padding: 2px 6px; border-radius: 10px; display: inline-block;
+}
+.status-waiting { background: rgba(107,114,128,.15); color: var(--muted); }
+.status-running { background: rgba(91,106,248,.2); color: #818cf8; }
+.status-done { background: rgba(34,197,94,.15); color: #4ade80; }
+.status-error { background: rgba(239,68,68,.15); color: #f87171; }
+.agent-progress {
+  height: 2px; background: var(--border); border-radius: 2px;
+  margin-top: 8px; overflow: hidden;
+}
+.agent-progress-bar {
+  height: 100%; width: 0%; background: var(--accent);
+  transition: width .3s; border-radius: 2px;
+}
+.arrow {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; flex-shrink: 0; color: var(--muted);
+  font-size: 16px; padding-top: 4px;
+  transition: color .3s;
+}
+.arrow.lit { color: var(--accent); }
+
+/* ── 工作区 ── */
+.workspace { flex: 1; display: grid; grid-template-columns: 1fr 1.4fr; gap: 0; }
+.log-panel {
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.panel-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  background: var(--bg2); flex-shrink: 0;
+}
+.panel-title { font-size: 13px; font-weight: 700; }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.dot-green { background: var(--green); }
+.dot-blue { background: var(--accent); }
+.log-body {
+  flex: 1; overflow-y: auto; padding: 12px 14px;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px; line-height: 1.8;
+  background: var(--bg);
+}
+.log-line { display: flex; gap: 8px; }
+.log-time { color: var(--muted); flex-shrink: 0; }
+.log-tag { font-weight: 700; padding: 0 4px; border-radius: 3px; flex-shrink: 0; font-size: 11px; }
+.log-msg { color: var(--text); }
+.tag-hot { background: rgba(239,68,68,.15); color: #f87171; }
+.tag-judge { background: rgba(245,158,11,.15); color: #fbbf24; }
+.tag-content { background: rgba(139,92,246,.15); color: #a78bfa; }
+.tag-script { background: rgba(91,106,248,.15); color: #818cf8; }
+.tag-review { background: rgba(34,197,94,.15); color: #4ade80; }
+.tag-push { background: rgba(236,72,153,.15); color: #f472b6; }
+.tag-sys { background: rgba(107,114,128,.15); color: #9ca3af; }
+.tag-warn { color: #fbbf24; }
+
+/* ── 输出面板 ── */
+.output-panel { display: flex; flex-direction: column; overflow: hidden; }
+.output-body { flex: 1; overflow-y: auto; padding: 16px; }
+.output-placeholder {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; gap: 12px; color: var(--muted);
+}
+.output-placeholder-icon { font-size: 48px; opacity: .3; }
+.output-placeholder-text { font-size: 14px; }
+
+/* ── 脚本卡片 ── */
+.script-tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+.script-tab {
+  padding: 5px 12px; border-radius: 6px; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  border: 1px solid var(--border); background: transparent; transition: all .2s;
+}
+.script-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.script-card { display: none; flex-direction: column; gap: 12px; animation: fadeIn .3s; }
+.script-card.visible { display: flex; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+.field-block {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden;
+}
+.field-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px; background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+}
+.field-icon { font-size: 14px; }
+.field-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.field-badge { margin-left: auto; }
+.field-body { padding: 12px 14px; line-height: 1.8; font-size: 13.5px; color: var(--text); }
+.cover-text {
+  font-size: 22px; font-weight: 900; letter-spacing: 1px;
+  color: #fff; text-align: center; padding: 8px 0;
+  background: linear-gradient(135deg, #5b6af8, #8b5cf6);
+  background-clip: text;
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.hook-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+.hook-tab {
+  padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
+  cursor: pointer; border: 1px solid var(--border); color: var(--muted); background: transparent; transition: all .2s;
+}
+.hook-tab.active { background: rgba(91,106,248,.2); border-color: var(--accent); color: #818cf8; }
+.oral-content { display: none; white-space: pre-wrap; }
+.oral-content.visible { display: block; }
+.meta-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.meta-chip {
+  font-size: 11px; padding: 2px 8px; border-radius: 20px;
+  background: var(--bg3); border: 1px solid var(--border); color: var(--muted);
+}
+.meta-chip span { color: var(--text); font-weight: 600; }
+
+/* ── 审核报告 ── */
+.review-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.review-item {
+  background: var(--bg3); border-radius: 8px; padding: 10px 12px;
+  border: 1px solid var(--border); text-align: center;
+}
+.review-item-label { font-size: 10px; color: var(--muted); margin-bottom: 4px; }
+.review-item-value { font-size: 18px; }
+.review-issues { font-size: 12px; color: #fbbf24; margin-top: 6px; }
+.sim-bar-wrap { background: var(--bg3); border-radius: 20px; height: 6px; overflow: hidden; margin-top: 4px; }
+.sim-bar { height: 100%; border-radius: 20px; transition: width 1s; }
+.sim-safe { background: var(--green); }
+.sim-warn { background: var(--yellow); }
+.sim-danger { background: var(--red); }
+
+/* ── 选题卡片 ── */
+.topic-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+.topic-mini {
+  background: var(--card); border: 1.5px solid var(--border);
+  border-radius: 10px; padding: 12px; cursor: pointer; transition: all .2s;
+}
+.topic-mini:hover { border-color: var(--accent); }
+.topic-mini.selected { border-color: var(--accent); background: rgba(91,106,248,.08); }
+.topic-mini-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.topic-mini-score {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px;
+}
+.score-bar { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.score-fill { height: 100%; background: linear-gradient(90deg, #5b6af8, #8b5cf6); border-radius: 2px; }
+.score-val { font-weight: 700; color: #818cf8; min-width: 28px; text-align: right; }
+.criteria-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+.criteria-tag {
+  font-size: 10px; padding: 1px 6px; border-radius: 10px;
+  background: rgba(139,92,246,.15); color: #a78bfa; border: 1px solid rgba(139,92,246,.2);
+}
+
+/* ── 热点源可视化 ── */
+.source-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.source-title-main { font-size: 15px; font-weight: 800; }
+.source-stats { font-size: 11px; color: var(--muted); }
+.source-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.source-chip {
+  font-size: 11px; padding: 3px 8px; border-radius: 20px;
+  color: var(--muted); background: var(--bg3); border: 1px solid var(--border);
+  cursor: pointer; transition: all .2s;
+}
+.source-chip.active { color: #fff; background: var(--accent); border-color: var(--accent); }
+.source-chip:hover { border-color: var(--accent); color: #818cf8; }
+.source-chip.active:hover { color: #fff; }
+.source-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.source-card {
+  min-height: 138px; display: flex; flex-direction: column; gap: 8px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px; transition: border-color .2s, transform .2s;
+}
+.source-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.source-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.source-platform { font-size: 11px; color: #a78bfa; font-weight: 700; }
+.source-heat { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.source-card-stats { font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: -2px; }
+.source-card-title {
+  color: var(--text); font-size: 13px; font-weight: 700; line-height: 1.55;
+  text-decoration: none; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.source-card-title:hover { color: #818cf8; }
+.source-summary { color: var(--muted); font-size: 12px; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.source-actions { margin-top: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.source-open, .source-use {
+  font-size: 12px; font-weight: 700; border-radius: 7px; padding: 5px 9px;
+  border: 1px solid var(--border); text-decoration: none; cursor: pointer; background: transparent;
+}
+.source-open { color: var(--accent); }
+.source-use { color: var(--text); }
+.source-open:hover, .source-use:hover { border-color: var(--accent); }
+.source-empty { color: var(--muted); padding: 24px 0; text-align: center; }
+.source-section { margin-bottom: 20px; }
+.source-section + .source-section { padding-top: 16px; border-top: 1px solid var(--border); }
+.source-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.source-section-title { font-size: 14px; font-weight: 800; }
+.source-section-desc { color: var(--muted); font-size: 11px; line-height: 1.6; margin-top: 2px; }
+.platform-status { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.platform-pill { font-size: 11px; color: var(--muted); background: var(--bg3); border: 1px solid var(--border); border-radius: 20px; padding: 3px 8px; }
+.platform-pill.ok { color: #86efac; border-color: rgba(34,197,94,.35); }
+.platform-pill.warn { color: #fbbf24; border-color: rgba(251,191,36,.35); }
+.helper-panel {
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px; display: grid; gap: 12px;
+}
+.helper-panel-title { font-size: 15px; font-weight: 800; }
+.helper-panel-text { color: var(--muted); font-size: 12px; line-height: 1.7; }
+.helper-steps { display: grid; gap: 8px; }
+.helper-step { display: grid; grid-template-columns: 24px 1fr; gap: 8px; align-items: start; }
+.helper-step-num { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 800; }
+.helper-step-title { color: var(--text); font-size: 12px; font-weight: 800; margin-bottom: 2px; }
+.helper-step-text { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.helper-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.helper-action {
+  font-size: 12px; font-weight: 700; border-radius: 7px; padding: 6px 10px;
+  border: 1px solid var(--border); color: var(--text); background: transparent;
+  text-decoration: none; cursor: pointer;
+}
+.helper-action.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.helper-action:hover { border-color: var(--accent); color: #818cf8; }
+.helper-action.primary:hover { color: #fff; background: #4a58e8; }
+.helper-status-line { font-size: 11px; color: var(--muted); }
+.helper-sidebar-status {
+  font-size: 11px; color: var(--muted); line-height: 1.6;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px;
+  background: rgba(35,39,58,.55); margin-bottom: 8px;
+}
+.helper-sidebar-status.connected { color: #86efac; border-color: rgba(34,197,94,.35); }
+.helper-sidebar-status.update { color: #fbbf24; border-color: rgba(251,191,36,.35); }
+.helper-sidebar-status.missing { color: #fca5a5; border-color: rgba(248,113,113,.35); }
+.cookie-setup-section { display: grid; gap: 10px; }
+.cookie-method-label { font-size: 11px; font-weight: 800; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+.cookie-browser-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.cookie-browser-btn {
+  font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: transparent; color: var(--text); cursor: pointer;
+}
+.cookie-browser-btn.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cookie-browser-btn:hover:not(.selected) { border-color: var(--accent); color: #818cf8; }
+.cookie-paste-area {
+  width: 100%; min-height: 60px; font-size: 11px; font-family: monospace;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); padding: 7px 9px; resize: vertical; box-sizing: border-box;
+}
+.cookie-paste-area:focus { outline: none; border-color: var(--accent); }
+.cookie-divider { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
+.cookie-divider::before, .cookie-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.cookie-result { font-size: 12px; padding: 6px 10px; border-radius: 6px; }
+.cookie-result.ok { background: #14532d33; color: #4ade80; border: 1px solid #4ade8044; }
+.cookie-result.err { background: #7f1d1d33; color: #f87171; border: 1px solid #f8717144; }
+
+/* ── 文案洗稿说明 ── */
+.rewrite-panel {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px 16px; margin-bottom: 16px;
+}
+.rewrite-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.rewrite-title { font-size: 13px; font-weight: 800; color: var(--text); }
+.rewrite-desc { font-size: 11px; color: var(--muted); line-height: 1.6; margin-top: 2px; }
+.rewrite-badge { font-size: 11px; color: #86efac; border: 1px solid rgba(34,197,94,.35); border-radius: 20px; padding: 3px 8px; white-space: nowrap; }
+.rewrite-flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.rewrite-step { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px; min-height: 142px; }
+.rewrite-step-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.rewrite-step-num { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: #fff; font-size: 11px; font-weight: 800; }
+.rewrite-step-name { font-size: 12px; font-weight: 800; color: var(--text); }
+.rewrite-step-body { color: var(--muted); font-size: 12px; line-height: 1.65; }
+.rewrite-kpis { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.rewrite-kpi { font-size: 10px; color: #a78bfa; background: rgba(139,92,246,.12); border: 1px solid rgba(139,92,246,.2); border-radius: 20px; padding: 2px 6px; }
+.rewrite-before-after { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.rewrite-textbox { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+.rewrite-textbox-text { font-size: 12px; line-height: 1.75; color: var(--text); white-space: pre-wrap; }
+@media (max-width: 760px) { .rewrite-flow { grid-template-columns: 1fr; } }
+
+
+
+/* ── 滚动条 ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+
+/* ── 加载动画 ── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  animation: spin .8s linear infinite; display: inline-block;
+}
+
+/* ── 响应式 ── */
+@media (max-width: 1000px) {
+  .main { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  .workspace { grid-template-columns: 1fr; }
+}
+</style>
+<style>
+/* MVP tweaks */
+.hot-search-box {
+  display: grid; gap: 8px; margin-bottom: 10px;
+}
+.hot-search-row {
+  display: grid; grid-template-columns: 1fr auto; gap: 8px;
+}
+.hot-quick {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.hot-quick-chip {
+  font-size: 11px; padding: 3px 9px; border-radius: 20px;
+  border: 1px solid var(--border); background: var(--bg3);
+  color: var(--muted); cursor: pointer; transition: all .15s;
+}
+.hot-quick-chip:hover, .hot-quick-chip.active {
+  color: #fff; background: var(--accent); border-color: var(--accent);
+}
+.btn-block { width: 100%; }
+.topic-flash {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(91,106,248,.25);
+  transition: box-shadow .3s, border-color .3s;
+}
+
+.ref-area {
+  width: 100%; min-height: 72px; resize: vertical;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 7px; padding: 8px 10px; color: var(--text);
+  font-size: 13px; font-family: inherit; outline: none;
+}
+.ref-area:focus { border-color: var(--accent); }
+.ref-area::placeholder { color: var(--muted); }
+.mvp-hint {
+  font-size: 11px; color: var(--muted); line-height: 1.6; margin-top: 6px;
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">🎬 短视频爆款脚本 AI Agent</div>
+  <span class="badge badge-mode" id="topModeLabel">模式1：热点驱动</span>
+  <span class="badge badge-live" id="badgeLive">● 已就绪</span>
+  <div class="spacer"></div>
+  <div class="topbar-actions">
+    <button class="btn btn-outline btn-sm" onclick="resetAll()">重置</button>
+    <button class="btn btn-primary" id="runBtn" onclick="runDemo()">▶ 开始生成</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-title">运行模式</div>
+      <div class="mode-tabs">
+        <div class="mode-tab active" id="modeTab1" onclick="setMode(1)">模式1<br><span style="font-size:10px;font-weight:400">热点驱动</span></div>
+        <div class="mode-tab" id="modeTab2" onclick="setMode(2)">模式2<br><span style="font-size:10px;font-weight:400">达人适配</span></div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">模型接入</div>
+      <div class="config-row">
+        <div class="config-label">厂商</div>
+        <select class="config-input" id="cfgProvider" onchange="onProviderChange()"></select>
+      </div>
+      <div class="config-row" id="baseUrlRow" style="display:none">
+        <div class="config-label">API Base URL</div>
+        <input class="config-input" id="cfgBaseUrl" placeholder="https://api.openai.com/v1" onchange="persistLlmConfig()" />
+      </div>
+      <div class="config-row">
+        <div class="config-label">模型</div>
+        <select class="config-input" id="cfgModel" onchange="onModelSelectChange()"></select>
+        <input class="config-input" id="cfgModelCustom" style="display:none;margin-top:8px" placeholder="自定义模型名，如 gpt-4o-mini" onchange="persistLlmConfig()" />
+      </div>
+      <div class="config-row">
+        <div class="config-label">API Key</div>
+        <input class="config-input" id="cfgApiKey" type="password" placeholder="粘贴对应厂商的 API Key" onchange="persistLlmConfig()" />
+        <div class="mvp-hint" id="providerHint">只保存在当前浏览器；经本机代理转发，适配 OpenAI 兼容协议。</div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">创作输入</div>
+      <div class="config-row">
+        <div class="config-label">手动选题（可选）</div>
+        <input class="config-input" id="cfgTopic" placeholder="如：美联储降息预期升温" />
+      </div>
+      <div class="config-row" id="influencerRow" style="display:none">
+        <div class="config-label">账号口吻（可选）</div>
+        <input class="config-input" id="cfgInfluencer" placeholder="幽默犀利，大白话讲金融…" />
+      </div>
+      <div class="config-row">
+        <div class="config-label">参考文案（可选，粘贴即可）</div>
+        <textarea class="ref-area" id="cfgReference" placeholder="粘贴爆款视频逐字稿或文章要点，作为洗稿参考。无需下载采集助手。"></textarea>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">热点源</div>
+      <div class="hot-search-box">
+        <div class="config-label">关键词查询</div>
+        <div class="hot-search-row">
+          <input class="config-input" id="cfgKeyword" placeholder="输入关键词，如：AI、降息、裁员"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();searchHotByKeyword();}" />
+          <button class="btn btn-primary btn-sm" onclick="searchHotByKeyword()">查询</button>
+        </div>
+        <div class="hot-quick" id="hotQuickChips">
+          <button type="button" class="hot-quick-chip" onclick="applyHotKeyword('AI')">AI</button>
+          <button type="button" class="hot-quick-chip" onclick="applyHotKeyword('降息')">降息</button>
+          <button type="button" class="hot-quick-chip" onclick="applyHotKeyword('裁员')">裁员</button>
+          <button type="button" class="hot-quick-chip" onclick="applyHotKeyword('房价')">房价</button>
+          <button type="button" class="hot-quick-chip" onclick="applyHotKeyword('新能源')">新能源</button>
+          <button type="button" class="hot-quick-chip" onclick="applyHotKeyword('美联储')">美联储</button>
+          <button type="button" class="hot-quick-chip" onclick="applyHotKeyword('职场')">职场</button>
+        </div>
+      </div>
+      <button class="btn btn-outline sidebar-full-control" onclick="loadPublicHotSources()">↗ 抓取全网热点</button>
+      <div class="hot-source-hint">先抓全网，或输入关键词查询相关热点。覆盖微博 / 百度 / 头条 / 腾讯 / 抖音 / B站。点卡片「用作选题」。</div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="pipeline-section">
+      <div class="pipeline-header">
+        <span class="pipeline-title">Agent 流水线</span>
+        <span id="pipelineStatus" style="font-size:12px;color:var(--muted)">等待运行…</span>
+      </div>
+      <div class="pipeline-flow">
+        <div class="agent-node"><div class="agent-card" id="nodeHot"><span class="agent-icon">🔥</span><div class="agent-name">热点感知</div><div class="agent-desc">公开资讯<br>多源热点</div><div class="agent-status status-waiting" id="statusHot">待机</div><div class="agent-progress"><div class="agent-progress-bar" id="progHot"></div></div></div></div>
+        <div class="arrow" id="arrow1">→</div>
+        <div class="agent-node"><div class="agent-card" id="nodeJudge"><span class="agent-icon">🎯</span><div class="agent-name">选题决策</div><div class="agent-desc">爆款法则<br>潜力评分</div><div class="agent-status status-waiting" id="statusJudge">待机</div><div class="agent-progress"><div class="agent-progress-bar" id="progJudge"></div></div></div></div>
+        <div class="arrow" id="arrow2">→</div>
+        <div class="agent-node"><div class="agent-card" id="nodeContent"><span class="agent-icon">✂️</span><div class="agent-name">解构洗稿</div><div class="agent-desc">爆款基因<br>裁缝拼接</div><div class="agent-status status-waiting" id="statusContent">待机</div><div class="agent-progress"><div class="agent-progress-bar" id="progContent"></div></div></div></div>
+        <div class="arrow" id="arrow3">→</div>
+        <div class="agent-node"><div class="agent-card" id="nodeScript"><span class="agent-icon">📝</span><div class="agent-name">脚本生成</div><div class="agent-desc">封面+口播<br>3版本真人化</div><div class="agent-status status-waiting" id="statusScript">待机</div><div class="agent-progress"><div class="agent-progress-bar" id="progScript"></div></div></div></div>
+        <div class="arrow" id="arrow4">→</div>
+        <div class="agent-node"><div class="agent-card" id="nodeReview"><span class="agent-icon">🔍</span><div class="agent-name">三重审核</div><div class="agent-desc">合规+口播<br>风险检测</div><div class="agent-status status-waiting" id="statusReview">待机</div><div class="agent-progress"><div class="agent-progress-bar" id="progReview"></div></div></div></div>
+        <div class="arrow" id="arrow5">→</div>
+        <div class="agent-node"><div class="agent-card" id="nodePush"><span class="agent-icon">🚀</span><div class="agent-name">推送输出</div><div class="agent-desc">本地导出<br>阅读版</div><div class="agent-status status-waiting" id="statusPush">待机</div><div class="agent-progress"><div class="agent-progress-bar" id="progPush"></div></div></div></div>
+      </div>
+    </div>
+
+    <div class="workspace">
+      <div class="log-panel">
+        <div class="panel-header">
+          <div class="dot dot-green"></div>
+          <div class="panel-title">运行日志</div>
+          <div class="spacer"></div>
+          <button class="btn btn-outline btn-sm" onclick="clearLog()">清空</button>
+        </div>
+        <div class="log-body" id="logBody">
+          <div class="log-line">
+            <span class="log-time">--:--:--</span>
+            <span class="log-tag tag-sys">SYS</span>
+            <span class="log-msg" style="color:var(--muted)">填写 API Key 后点击「开始生成」；也可先浏览公开热点源。</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="output-panel">
+        <div class="panel-header">
+          <div class="dot dot-blue"></div>
+          <div class="panel-title">脚本输出</div>
+          <div class="spacer"></div>
+          <button class="btn btn-outline btn-sm" id="exportBtn" onclick="exportScripts()" style="display:none">↓ 导出阅读版</button>
+          <span id="outputMeta" style="font-size:11px;color:var(--muted);margin-left:8px"></span>
+        </div>
+        <div class="output-body" id="outputBody">
+          <div class="output-placeholder" id="outputPlaceholder">
+            <div class="output-placeholder-icon">📄</div>
+            <div class="output-placeholder-text">运行后查看生成脚本</div>
+          </div>
+          <div id="outputContent" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const LLM_STORAGE_KEY = 'shipinjiaoben.llmConfig';
+const FALLBACK_PROVIDERS = [
+  {id:'dashscope', name:'通义百炼 / 千问', base_url:'https://dashscope.aliyuncs.com/compatible-mode/v1', models:['qwen-plus','qwen-turbo','qwen-max'], hint:'阿里云百炼'},
+  {id:'openai', name:'OpenAI', base_url:'https://api.openai.com/v1', models:['gpt-4o-mini','gpt-4o','gpt-4.1-mini'], hint:'platform.openai.com'},
+  {id:'deepseek', name:'DeepSeek', base_url:'https://api.deepseek.com', models:['deepseek-chat','deepseek-reasoner'], hint:'platform.deepseek.com'},
+  {id:'moonshot', name:'月之暗面 Kimi', base_url:'https://api.moonshot.cn/v1', models:['moonshot-v1-8k','moonshot-v1-32k','kimi-latest'], hint:'platform.moonshot.cn'},
+  {id:'zhipu', name:'智谱 GLM', base_url:'https://open.bigmodel.cn/api/paas/v4', models:['glm-4-flash','glm-4-air','glm-4-plus'], hint:'open.bigmodel.cn'},
+  {id:'siliconflow', name:'硅基流动', base_url:'https://api.siliconflow.cn/v1', models:['deepseek-ai/DeepSeek-V3','Qwen/Qwen2.5-72B-Instruct'], hint:'siliconflow.cn'},
+  {id:'custom', name:'自定义 OpenAI 兼容', base_url:'', models:[], hint:'任意 /v1/chat/completions 服务'},
+];
+let LLM_PROVIDERS = FALLBACK_PROVIDERS.slice();
+// file:// 打开时相对路径 /api 会失败，自动回退到本机服务
+const LOCAL_API_BASE = (location.protocol === 'file:' || !location.origin || location.origin === 'null')
+  ? 'http://127.0.0.1:8765'
+  : '';
+let mode = 1;
+let isRunning = false;
+let _modelIdx = 0;
+
+function apiUrl(path){
+  const p = path.startsWith('/') ? path : `/${path}`;
+  return `${LOCAL_API_BASE}${p}`;
+}
+
+function getProvider(id){
+  return LLM_PROVIDERS.find(p => p.id === id) || LLM_PROVIDERS[0];
+}
+function readLlmConfig(){
+  try { return JSON.parse(localStorage.getItem(LLM_STORAGE_KEY) || '{}') || {}; }
+  catch(_) { return {}; }
+}
+function persistLlmConfig(){
+  const providerId = document.getElementById('cfgProvider')?.value || 'dashscope';
+  const provider = getProvider(providerId);
+  const modelSelect = document.getElementById('cfgModel')?.value || '';
+  const customModel = document.getElementById('cfgModelCustom')?.value.trim() || '';
+  const model = modelSelect === '__custom__' ? customModel : modelSelect;
+  const baseUrl = providerId === 'custom'
+    ? (document.getElementById('cfgBaseUrl')?.value.trim() || '')
+    : (provider.base_url || '');
+  const cfg = {
+    provider: providerId,
+    base_url: baseUrl,
+    model,
+    api_key: document.getElementById('cfgApiKey')?.value || '',
+  };
+  localStorage.setItem(LLM_STORAGE_KEY, JSON.stringify(cfg));
+  return cfg;
+}
+function currentLlmConfig(){
+  const providerId = document.getElementById('cfgProvider')?.value || 'dashscope';
+  const provider = getProvider(providerId);
+  const modelSelect = document.getElementById('cfgModel')?.value || '';
+  const customModel = document.getElementById('cfgModelCustom')?.value.trim() || '';
+  const model = modelSelect === '__custom__' ? customModel : (modelSelect || (provider.models||[])[0] || '');
+  const baseUrl = providerId === 'custom'
+    ? (document.getElementById('cfgBaseUrl')?.value.trim() || '')
+    : (document.getElementById('cfgBaseUrl')?.value.trim() || provider.base_url || '');
+  return {
+    provider: providerId,
+    base_url: baseUrl,
+    model,
+    api_key: document.getElementById('cfgApiKey')?.value.trim() || '',
+    fallback_models: (provider.models || []).filter(m => m && m !== model),
+  };
+}
+function fillModelOptions(provider, selected=''){
+  const sel = document.getElementById('cfgModel');
+  const custom = document.getElementById('cfgModelCustom');
+  const models = provider.models || [];
+  sel.innerHTML = models.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('')
+    + `<option value="__custom__">自定义模型…</option>`;
+  if (selected && models.includes(selected)) {
+    sel.value = selected;
+    custom.style.display = 'none';
+  } else if (selected) {
+    sel.value = '__custom__';
+    custom.style.display = 'block';
+    custom.value = selected;
+  } else {
+    sel.value = models[0] || '__custom__';
+    custom.style.display = sel.value === '__custom__' ? 'block' : 'none';
+  }
+}
+function onModelSelectChange(){
+  const isCustom = document.getElementById('cfgModel').value === '__custom__';
+  document.getElementById('cfgModelCustom').style.display = isCustom ? 'block' : 'none';
+  if (isCustom) document.getElementById('cfgModelCustom').focus();
+  persistLlmConfig();
+  _modelIdx = 0;
+}
+function onProviderChange(){
+  const provider = getProvider(document.getElementById('cfgProvider').value);
+  document.getElementById('baseUrlRow').style.display = provider.id === 'custom' ? 'block' : 'none';
+  if (provider.id !== 'custom') document.getElementById('cfgBaseUrl').value = provider.base_url || '';
+  document.getElementById('providerHint').textContent =
+    `${provider.hint || ''} · Key 只保存在浏览器，经本机代理转发，兼容 OpenAI 协议。`;
+  fillModelOptions(provider, (provider.models||[])[0] || '');
+  persistLlmConfig();
+  _modelIdx = 0;
+}
+function initProviderSelect(selectedId='dashscope', selectedModel=''){
+  const sel = document.getElementById('cfgProvider');
+  sel.innerHTML = LLM_PROVIDERS.map(p =>
+    `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`
+  ).join('');
+  if (LLM_PROVIDERS.some(p => p.id === selectedId)) sel.value = selectedId;
+  const provider = getProvider(sel.value);
+  document.getElementById('baseUrlRow').style.display = provider.id === 'custom' ? 'block' : 'none';
+  document.getElementById('cfgBaseUrl').value = provider.id === 'custom'
+    ? (readLlmConfig().base_url || '')
+    : (provider.base_url || '');
+  document.getElementById('providerHint').textContent =
+    `${provider.hint || ''} · Key 只保存在浏览器，经本机代理转发，兼容 OpenAI 协议。`;
+  fillModelOptions(provider, selectedModel || (provider.models||[])[0] || '');
+}
+
+let PROMPT_PACK = null;
+
+function fillTemplate(tpl, vars){
+  let out = String(tpl || '');
+  Object.keys(vars || {}).forEach(k => {
+    out = out.split('{'+k+'}').join(vars[k] == null ? '' : String(vars[k]));
+  });
+  return out;
+}
+async function loadPromptPack(){
+  try {
+    const res = await fetch(apiUrl('/api/prompts'));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    PROMPT_PACK = data.prompts;
+  } catch (e) {
+    PROMPT_PACK = {
+      judge: { system: '你是短视频选题策略师。从候选中选1条传播潜力最高的选题。输出纯JSON：{"topic":"","score":90,"criteria":["法则1"],"structure":"问题前置+层层解答"}', user: '候选热点：\n{topics_str}\n请选出最佳1条。只输出JSON。' },
+      rewrite: { system: '你是短视频口播洗稿专家。输出纯JSON：{"oral_draft":"","angle":"","hook_seed":""}。禁止稳赚/荐股/私信导流。', user: '{style_hint}{ref_hint}选题：{topic}\n请生成oral_draft。只输出JSON。' },
+      script: { system: '你是短视频脚本策划。输出纯JSON：{"version":1,"oral_script":"","cover":"","direct_post":"","hooks":["","",""],"pinned":"","hook_type":"","structure":""}。封面≤12字，禁止荐股/私信。主题锁定。', user: '只写「{topic}」。\n口播素材：{draft}\n{ref_block}版本要求：角度={angle}；结构={structure}；钩子类型={hook_type}。' },
+      review: { system: '你是短视频审核员。输出纯JSON：{"compliance":true,"oral":true,"professional":true,"issues":[],"suggestions":[],"severity":"pass"}', user: '审核：\n{summary}' },
+    };
+    addLog('SYS','tag-sys', `<span style="color:#fbbf24">提示词包加载失败，使用本地兜底：${escapeHtml(e.message)}</span>`);
+  }
+}
+
+async function loadProviders(){
+  const saved = readLlmConfig();
+  try {
+    const res = await fetch(apiUrl('/api/llm/providers'));
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.providers) && data.providers.length) LLM_PROVIDERS = data.providers;
+    }
+  } catch(_) {}
+  initProviderSelect(saved.provider || 'dashscope', saved.model || '');
+  if (saved.api_key) document.getElementById('cfgApiKey').value = saved.api_key;
+  if (saved.base_url && (saved.provider === 'custom')) {
+    document.getElementById('cfgBaseUrl').value = saved.base_url;
+  }
+}
+
+const MOCK_TOPICS = [
+  { topic: '美联储降息预期升温，普通投资者该怎么办', score: 92, criteria: ['权威解读','常见痛点','情绪共鸣点'] },
+  { topic: 'AI算力股大涨背后的产业逻辑', score: 88, criteria: ['信息差/揭秘','反认知观点'] },
+  { topic: '年轻人不敢买基金？三个认知误区', score: 85, criteria: ['替弱势群体发声','痛点'] },
+];
+const MOCK_SCRIPTS = [
+  {
+    version: 1, cover: '降息来了\\n别慌着上车', direct_post: '美联储降息预期升温，很多人急着加仓。先看懂三件事，再决定要不要动。',
+    oral_script: '最近到处都在说美联储要降息了。朋友圈里有人已经开始喊上车。但你有没有想过，降息预期升温，和真正落地之间，市场可能先涨后震荡。普通人真正该关心的，不是猜明天涨不涨，而是自己的仓位有没有留出容错空间。今天就三句话讲清楚。',
+    hooks: ['降息预期升温，普通人先别急着梭哈', '别人喊上车时，你该先问自己三件事', '降息不等于稳赚，先看懂风险再动手'],
+    pinned: '你更关心降息对基金还是存款的影响？评论区聊聊～', hook_type: '痛点类', structure: '问题前置+层层解答'
+  },
+  {
+    version: 2, cover: 'AI算力\\n热钱在追什么', direct_post: '算力股又涨了。热钱在追什么？拆开看产业逻辑，比追涨更重要。',
+    oral_script: 'AI概念天天涨，但真正能持续赚钱的，往往不是最吵的那个名字。算力、电力、散热、芯片供应，这几个环节谁卡脖子，谁就有定价权。普通人追热点容易买在情绪最高点，不如先搞清楚产业链哪一段需求最硬。',
+    hooks: ['算力股大涨，热钱到底在赌什么', '别只看涨幅，先看产业链卡点', 'AI热钱背后，普通人该盯哪一段'],
+    pinned: '你更看好上游芯片还是下游应用？说说理由', hook_type: '好奇类', structure: '结果前置+倒叙还原'
+  },
+  {
+    version: 3, cover: '别再\\n盲目定投了', direct_post: '很多人不是不会定投，是定投在错误预期上。三个误区先避开。',
+    oral_script: '有人说定投稳赚，也有人说定投被套。其实问题不在定投这个动作，而在你有没有搞清楚标的风险、投资期限和自己的现金流。把这三个想明白，定投才是工具，不是信仰。',
+    hooks: ['定投亏钱？先看你踩了哪三个坑', '年轻人不敢买基金，真相往往在这里', '别把定投当玄学，先搞清楚这三件事'],
+    pinned: '你定投过哪些产品？体验怎么样欢迎分享', hook_type: '反差类', structure: '场景带入+情绪推进'
+  },
+];
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('modeTab1').classList.toggle('active', m===1);
+  document.getElementById('modeTab2').classList.toggle('active', m===2);
+  document.getElementById('topModeLabel').textContent = m===1 ? '模式1：热点驱动' : '模式2：达人适配';
+  document.getElementById('influencerRow').style.display = m===2 ? 'block' : 'none';
+}
+function clearLog() {
+  document.getElementById('logBody').innerHTML = '';
+}
+function addLog(tag, tagClass, msg) {
+  const now = new Date();
+  const t = [now.getHours(), now.getMinutes(), now.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `<span class="log-time">${t}</span><span class="log-tag ${tagClass}">${tag}</span><span class="log-msg">${msg}</span>`;
+  const body = document.getElementById('logBody');
+  body.appendChild(line);
+  body.scrollTop = body.scrollHeight;
+}
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function escapeHtml(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function compactText(value, max=160){
+  const text = String(value||'').replace(/\s+/g,' ').trim();
+  return text.length > max ? text.slice(0,max)+'…' : text;
+}
+function countOralChars(value){
+  return [...String(value||'').replace(/https?:\/\/\S+/g,'').replace(/\s+/g,'')]
+    .filter(ch => /[\u3400-\u9fffA-Za-z0-9]/.test(ch)).length;
+}
+function searchTerms(value){
+  const raw = String(value||'').trim();
+  if (!raw) return [];
+  const parts = raw.split(/[\s,，、;；|/]+/);
+  return [...new Set([raw, raw.replace(/\s+/g,''), ...parts].map(t=>t.trim()).filter(Boolean))].slice(0,8);
+}
+function keywordMatchScore(target={}, keyword=''){
+  const terms = searchTerms(keyword);
+  if (!terms.length) return 0;
+  const hay = `${target.title||''} ${target.summary||''} ${target.topic||''}`.toLowerCase();
+  let score = 0;
+  for (const term of terms) if (hay.includes(term.toLowerCase())) score += term.length >= 4 ? 3 : 2;
+  return score;
+}
+function hasDouyinRisk(value){
+  return /留下.{0,8}(股票)?代码|评论区发持仓|私信|加群|免费诊股|荐股|稳赚|必涨|保本/.test(String(value||''));
+}
+function sanitizeDouyinComplianceText(value, role='oral', topic=''){
+  let text = String(value||'').replace(/\s+/g,' ').trim();
+  text = text.replace(/留下.{0,12}代码/g,'看看公开信息')
+             .replace(/评论区发持仓/g,'评论区聊聊观点')
+             .replace(/私信|加群|免费诊股|荐股/g,'理性讨论')
+             .replace(/稳赚|必涨|保本|无风险/g,'有风险');
+  if (!text && role==='pinned') text = `关于「${topic||'这个话题'}」，你怎么看？欢迎理性讨论`;
+  return text;
+}
+
+function setNodeState(id, state, progress=0){
+  const card = document.getElementById('node'+id);
+  const status = document.getElementById('status'+id);
+  const bar = document.getElementById('prog'+id);
+  if (!card) return;
+  card.className = 'agent-card' + (state==='running'?' active':state==='done'?' done':'');
+  if (bar) bar.style.width = (progress||0) + '%';
+  if (state==='running'){ status.className='agent-status status-running'; status.innerHTML='<span class="spinner"></span> 运行中'; }
+  else if (state==='done'){
+    status.className='agent-status status-done'; status.textContent='✓ 完成';
+    if (bar) bar.style.width='100%';
+    const arrowId = {Hot:1,Judge:2,Content:3,Script:4,Review:5,Push:null}[id];
+    if (arrowId) document.getElementById('arrow'+arrowId).className = 'arrow lit';
+  }
+  else if (state==='error'){ status.className='agent-status status-error'; status.textContent='✗ 错误'; }
+  else { status.className='agent-status status-waiting'; status.textContent='待机'; if(bar) bar.style.width='0%'; }
+}
+async function animateProgress(id, duration=1200){
+  const steps = 20;
+  for (let i=1;i<=steps;i++){ setNodeState(id,'running', (i/steps)*100); await sleep(duration/steps); }
+}
+function resetNodes(){ ['Hot','Judge','Content','Script','Review','Push'].forEach(id=>setNodeState(id,'idle')); }
+function resetAll(){
+  resetNodes(); clearLog();
+  document.getElementById('pipelineStatus').textContent='等待运行…';
+  document.getElementById('outputPlaceholder').style.display='flex';
+  document.getElementById('outputContent').style.display='none';
+  document.getElementById('outputContent').innerHTML='';
+  document.getElementById('outputMeta').textContent='';
+  document.getElementById('exportBtn').style.display='none';
+  document.getElementById('runBtn').textContent='▶ 开始生成';
+  addLog('SYS','tag-sys','已重置，可以重新开始。');
+}
+
+function _isAuthError(status, text=''){
+  return status===401 || /InvalidApiKey|Unauthorized|NoApiKey/i.test(text);
+}
+function _isSwitchableLLMError(status, text=''){
+  if (_isAuthError(status,text)) return false;
+  return status===429 || /quota|RateLimit|ModelNotFound|InsufficientBalance|FreeTier/i.test(text);
+}
+async function callLLM(sys, usr){
+  const cfg = currentLlmConfig();
+  persistLlmConfig();
+  if (!cfg.api_key) throw new Error('请先填写 API Key');
+  if (!cfg.base_url) throw new Error('请填写 API Base URL（自定义厂商必填）');
+  if (!cfg.model) throw new Error('请选择或填写模型名');
+
+  const fallback = cfg.fallback_models || [];
+  const models = [cfg.model, ...fallback].filter((m,i,arr) => m && arr.indexOf(m)===i);
+  const tryModels = models.slice(_modelIdx);
+  let last = '';
+
+  for (let i = 0; i < tryModels.length; i++) {
+    const model = tryModels[i];
+    const remainingFallback = tryModels.slice(i + 1);
+    let res;
+    try {
+      res = await fetch(apiUrl('/api/llm/chat'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          api_key: cfg.api_key,
+          base_url: cfg.base_url,
+          model,
+          temperature: 0.8,
+          fallback_models: remainingFallback,
+          messages: [
+            { role: 'system', content: sys },
+            { role: 'user', content: usr },
+          ],
+        }),
+      });
+    } catch (e) {
+      throw new Error(
+        `无法连接本机 LLM 代理。请确认服务已启动：uvicorn app.main:app --host 127.0.0.1 --port 8765`
+      );
+    }
+    const text = await res.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch(_) { data = { detail: text.slice(0,200) }; }
+
+    if (!res.ok) {
+      const detail = data.detail || data.error || text.slice(0,200);
+      last = typeof detail === 'string' ? detail : JSON.stringify(detail).slice(0,200);
+      if (_isSwitchableLLMError(res.status, last)) {
+        _modelIdx = Math.max(_modelIdx, models.indexOf(model) + 1);
+        addLog('SYS','tag-sys', `<span style="color:#fbbf24">${escapeHtml(model)} 不可用，尝试下一个…</span>`);
+        continue;
+      }
+      throw new Error(last);
+    }
+    if (data.model && data.model !== cfg.model) {
+      addLog('SYS','tag-sys', `已切换模型：${escapeHtml(data.model)}`);
+      _modelIdx = Math.max(0, models.indexOf(data.model));
+    }
+    return data.content || '';
+  }
+  throw new Error(`所有模型不可用：${last}`);
+}
+function sanitizeJsonControlChars(str){
+  return String(str||'').replace(/[\u0000-\u001f]/g, ch => ch==='\n'||ch==='\t' ? ch : ' ');
+}
+async function callLLMJson(sys, usr){
+  const raw = await callLLM(sys, usr);
+  let cleaned = raw.replace(/```(?:json)?/g,'').replace(/```/g,'').trim();
+  cleaned = sanitizeJsonControlChars(cleaned);
+  try { return JSON.parse(cleaned); } catch(_){}
+  const m = cleaned.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+  if (m){ try { return JSON.parse(m[1]); } catch(_){} }
+  throw new Error('模型未返回合法 JSON');
+}
+
+async function fetchHotTopics(limit=80, q=''){
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (q && String(q).trim()) params.set('q', String(q).trim());
+  const url = apiUrl(`/api/hot/topics?${params.toString()}`);
+  let res;
+  try {
+    res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+  } catch (e) {
+    throw new Error(
+      `无法连接本机服务（${LOCAL_API_BASE || location.origin}）。` +
+      '请先在项目目录运行：uvicorn app.main:app --host 127.0.0.1 --port 8765，' +
+      '然后访问 http://127.0.0.1:8765 （不要用 file:// 直接打开 HTML）'
+    );
+  }
+  if (!res.ok) throw new Error(`热点接口 HTTP ${res.status}`);
+  return res.json();
+}
+
+async function checkLocalApi(){
+  try {
+    const res = await fetch(apiUrl('/api/health'), { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (LOCAL_API_BASE) {
+      addLog('SYS','tag-sys', `已通过 file:// 打开，自动连接本机服务 ${LOCAL_API_BASE} ✓`);
+    } else {
+      addLog('SYS','tag-sys', `本机服务已连接 ✓（${(data.platforms||[]).length} 个热点源）`);
+    }
+    document.getElementById('badgeLive').textContent = '● 已就绪';
+    return true;
+  } catch (e) {
+    document.getElementById('badgeLive').textContent = '● 服务未启动';
+    document.getElementById('badgeLive').style.color = '#f87171';
+    addLog('SYS','tag-sys',
+      `<span style="color:#f87171">本机服务未启动或连不上。</span> ` +
+      `请在终端执行：<code style="color:#818cf8">uvicorn app.main:app --host 127.0.0.1 --port 8765</code>，` +
+      `然后打开 <a href="http://127.0.0.1:8765" style="color:#818cf8">http://127.0.0.1:8765</a>`
+    );
+    return false;
+  }
+}
+function focusHotTopics(topics=[], limit=80){ return (topics||[]).slice(0, limit); }
+function rankTopicsForKeyword(topics=[], keyword='', limit=6){
+  return [...topics]
+    .map(t => ({...t, _score: keywordMatchScore(t, keyword) * 10 + Number(t.heat_score||0)}))
+    .sort((a,b)=>b._score-a._score)
+    .slice(0, limit);
+}
+function formatHeat(value){
+  const n = Number(value||0);
+  if (n >= 100000000) return (n/100000000).toFixed(1)+'亿';
+  if (n >= 10000) return (n/10000).toFixed(1)+'万';
+  return n ? String(n) : '';
+}
+function normalizeTopicDecision(raw, candidates){
+  const topic = raw?.topic || candidates?.[0]?.topic || candidates?.[0]?.title || '未命名选题';
+  return {
+    topic,
+    score: Number(raw?.score || raw?.potential_score || 80),
+    criteria: Array.isArray(raw?.criteria) ? raw.criteria : (raw?.matched_criteria||[]),
+    structure: raw?.structure || raw?.recommended_structure || '问题前置+层层解答',
+  };
+}
+function normalizeGeneratedScript(raw, index, context={}){
+  const hooks = Array.isArray(raw?.hooks) ? raw.hooks : [];
+  return {
+    version: raw?.version || index+1,
+    cover: String(raw?.cover || raw?.cover_copy || context.topic || '').slice(0, 24),
+    direct_post: sanitizeDouyinComplianceText(raw?.direct_post || '', 'direct_post', context.topic),
+    oral_script: sanitizeDouyinComplianceText(raw?.oral_script || raw?.oral || '', 'oral', context.topic),
+    hooks: hooks.map(h => sanitizeDouyinComplianceText(h, 'oral', context.topic)).filter(Boolean).slice(0,3),
+    pinned: sanitizeDouyinComplianceText(raw?.pinned || raw?.pinned_comment || '', 'pinned', context.topic),
+    hook_type: raw?.hook_type || context.hookType || '',
+    structure: raw?.structure || context.structure || '',
+  };
+}
+function buildFallbackScriptVersion(index, context={}){
+  const base = context.sourceCopy || context.draft || `今天聊聊「${context.topic}」。先把逻辑讲清楚，再谈普通人怎么应对。`;
+  return {
+    version: index+1,
+    cover: compactText(context.topic, 12),
+    direct_post: sanitizeDouyinComplianceText(`关于「${context.topic}」，先看懂这三点再行动。`, 'direct_post', context.topic),
+    oral_script: sanitizeDouyinComplianceText(base.slice(0, 420), 'oral', context.topic),
+    hooks: [
+      `关于「${context.topic}」，很多人第一反应都错了`,
+      `先别急着下结论，这件事有三个关键`,
+      `普通人该怎么看「${context.topic}」`,
+    ],
+    pinned: sanitizeDouyinComplianceText('', 'pinned', context.topic),
+    hook_type: context.hookType || '痛点类',
+    structure: context.structure || '问题前置+层层解答',
+  };
+}
+
+function useTopicAsInput(topic){
+  const value = String(topic || '').trim();
+  if (!value) {
+    addLog('HOT','tag-hot', '<span style="color:#fbbf24">选题为空，无法填入</span>');
+    return;
+  }
+  const input = document.getElementById('cfgTopic');
+  input.value = value;
+  input.focus();
+  input.classList.add('topic-flash');
+  setTimeout(() => input.classList.remove('topic-flash'), 1200);
+  addLog('HOT','tag-hot', `已选用题：「${escapeHtml(value)}」→ 可直接点「开始生成」`);
+  // 移动端侧栏隐藏时也给出可见反馈
+  document.getElementById('pipelineStatus').innerHTML = `<span style="color:#4ade80">已锁定选题：${escapeHtml(compactText(value, 28))}</span>`;
+}
+function useTopicByIndex(idx){
+  const list = window._visibleHotSources || [];
+  const item = list[idx];
+  if (!item) {
+    addLog('HOT','tag-hot', '<span style="color:#f87171">选题索引无效，请重新抓取热点</span>');
+    return;
+  }
+  useTopicAsInput(item.title || item.topic || '');
+}
+function renderHotSources(topics, meta={}){
+  topics = (topics||[]).filter(item => item?.title || item?.topic);
+  const summary = topics.reduce((acc, item) => {
+    const key = String(item.source || '未知来源').split('/')[0];
+    acc[key] = (acc[key]||0)+1;
+    return acc;
+  }, {});
+  let active = window._activeHotSource || '全部';
+  if (active !== '全部' && !summary[active]) active = '全部';
+  window._allHotSources = topics;
+  window._hotMeta = { ...(window._hotMeta || {}), ...meta };
+  window._activeHotSource = active;
+  const chips = ['全部', ...Object.keys(summary)].map(name =>
+    `<button class="source-chip ${name===active?'active':''}" onclick="filterHotSource(this.dataset.source)" data-source="${escapeHtml(name)}">${escapeHtml(name)}${name==='全部'?'':` ${summary[name]}`}</button>`
+  ).join('');
+  const filtered = active==='全部' ? topics : topics.filter(t => String(t.source||'').startsWith(active));
+  window._visibleHotSources = filtered;
+  const cards = filtered.map((item, idx) => {
+    const title = escapeHtml(item.title || item.topic || '');
+    const url = escapeHtml(item.url || '');
+    const source = escapeHtml(item.source || '');
+    const heat = formatHeat(item.heat_score);
+    const summaryText = escapeHtml(compactText(item.summary || '', 90));
+    const open = url ? `<a class="source-open" href="${url}" target="_blank" rel="noopener">打开源头</a>` : '';
+    const titleNode = url
+      ? `<a class="source-card-title" href="${url}" target="_blank" rel="noopener">${title}</a>`
+      : `<div class="source-card-title">${title}</div>`;
+    return `<div class="source-card">
+      <div class="source-card-head"><span class="source-platform">${source}</span><span class="source-heat">${heat||''}</span></div>
+      ${titleNode}
+      <div class="source-summary">${summaryText||'全网热点内容'}</div>
+      <div class="source-actions">${open}<button type="button" class="source-use" onclick="useTopicByIndex(${idx})">用作选题</button></div>
+    </div>`;
+  }).join('');
+  document.getElementById('outputPlaceholder').style.display='none';
+  document.getElementById('outputContent').style.display='block';
+  document.getElementById('exportBtn').style.display='none';
+  const q = (meta.q || '').trim();
+  const scopeLabel = q ? `关键词「${escapeHtml(q)}」` : '全网热点';
+  const sourceStatus = (meta.sources || []).map(s => {
+    const cls = s.ok ? 'ok' : 'warn';
+    const label = s.ok ? `${escapeHtml(s.name)} ${s.count}` : `${escapeHtml(s.name)} 失败`;
+    return `<span class="platform-pill ${cls}">${label}</span>`;
+  }).join('');
+  const refreshAction = q
+    ? `searchHotByKeyword()`
+    : `loadPublicHotSources()`;
+  document.getElementById('outputMeta').textContent = `${q ? '关键词查询' : '全网热点'} ${filtered.length} 条`;
+  document.getElementById('outputContent').innerHTML = `
+    <div class="source-section">
+      <div class="source-toolbar">
+        <div>
+          <div class="source-title-main">${scopeLabel}</div>
+          <div class="source-stats">原始 ${meta.raw_total||topics.length} · 命中 ${meta.total||topics.length}</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="${refreshAction}">刷新</button>
+      </div>
+      ${sourceStatus ? `<div class="platform-status">${sourceStatus}</div>` : ''}
+      <div class="source-chips">${chips}</div>
+      ${cards ? `<div class="source-grid">${cards}</div>` : `<div class="source-empty">${q ? `没有找到与「${escapeHtml(q)}」相关的热点，试试换词或先抓取全网热点。` : '暂无热点，可手动填写选题后生成'}</div>`}
+    </div>`;
+}
+function filterHotSource(name){
+  window._activeHotSource = name;
+  renderHotSources(window._allHotSources || [], window._hotMeta || {});
+}
+function applyHotKeyword(word){
+  const input = document.getElementById('cfgKeyword');
+  input.value = word;
+  document.querySelectorAll('.hot-quick-chip').forEach(el => {
+    el.classList.toggle('active', el.textContent.trim() === word);
+  });
+  searchHotByKeyword();
+}
+async function searchHotByKeyword(){
+  const q = document.getElementById('cfgKeyword').value.trim();
+  if (!q) {
+    addLog('HOT','tag-hot','<span style="color:#fbbf24">请先输入关键词，再查询。</span>');
+    document.getElementById('cfgKeyword').focus();
+    return;
+  }
+  await loadHotTopics({ q, label: `关键词「${q}」` });
+}
+async function loadPublicHotSources(){
+  await loadHotTopics({ q: '', label: '全网热点' });
+}
+async function loadHotTopics({ q='', label='全网热点' }={}){
+  document.getElementById('outputPlaceholder').style.display='none';
+  document.getElementById('outputContent').style.display='block';
+  document.getElementById('exportBtn').style.display='none';
+  document.getElementById('outputMeta').textContent=`${label}抓取中…`;
+  document.getElementById('outputContent').innerHTML=`<div class="source-empty"><span class="spinner"></span> 正在抓取${escapeHtml(label)}（微博/百度/头条/腾讯/抖音/B站…）</div>`;
+  addLog('HOT','tag-hot',`开始抓取${escapeHtml(label)}…`);
+  try {
+    const data = await fetchHotTopics(100, q);
+    window._hotMeta = data;
+    window._activeHotSource = '全部';
+    const focused = focusHotTopics(data.topics||[], 100);
+    renderHotSources(focused, data);
+    const okSources = (data.sources||[]).filter(s=>s.ok).map(s=>`${s.name}${s.count}`).join(' · ');
+    const failSources = (data.sources||[]).filter(s=>!s.ok).map(s=>s.name);
+    addLog('HOT','tag-hot', `${escapeHtml(label)}完成：原始 ${data.raw_total||0}，命中 ${focused.length} ✓`);
+    if (okSources) addLog('HOT','tag-hot', `成功：${okSources}`);
+    if (failSources.length) addLog('HOT','tag-hot', `<span style="color:#fbbf24">失败：${failSources.join('、')}</span>`);
+  } catch(e){
+    document.getElementById('outputMeta').textContent='抓取失败';
+    document.getElementById('outputContent').innerHTML=`<div class="source-empty">热点源暂不可用：${escapeHtml(e.message)}<br>可直接填写手动选题生成脚本。</div>`;
+    addLog('HOT','tag-hot', `<span style="color:#f87171">热点源失败：${escapeHtml(e.message)}</span>`);
+  }
+}
+
+function switchScript(idx){
+  document.querySelectorAll('.script-tab').forEach((el,i)=>el.classList.toggle('active', i===idx));
+  document.querySelectorAll('.script-card').forEach((el,i)=>el.classList.toggle('visible', i===idx));
+}
+function switchHook(si, hi){
+  document.querySelectorAll(`.hook-tab[data-s="${si}"]`).forEach((el,i)=>el.classList.toggle('active', i===hi));
+  document.querySelectorAll(`.oral-content[data-s="${si}"]`).forEach((el,i)=>el.classList.toggle('visible', i===hi));
+}
+function renderOutput(topic, scripts, review){
+  window._generatedScripts = scripts;
+  window._currentTopic = topic;
+  const topicsHtml = '';
+  const reviewHtml = review ? `
+    <div class="review-grid">
+      <div class="review-item"><div class="review-item-label">合规</div><div class="review-item-value">${review.compliance!==false?'✅':'❌'}</div></div>
+      <div class="review-item"><div class="review-item-label">口播</div><div class="review-item-value">${review.oral!==false?'✅':'❌'}</div></div>
+      <div class="review-item"><div class="review-item-label">专业</div><div class="review-item-value">${review.professional!==false?'✅':'❌'}</div></div>
+    </div>
+    ${(review.issues||[]).length ? `<div class="review-issues">${(review.issues||[]).map(escapeHtml).join('；')}</div>` : ''}
+  ` : '';
+  const tabs = scripts.map((s,i)=>`<div class="script-tab ${i===0?'active':''}" onclick="switchScript(${i})">版本 ${i+1}</div>`).join('');
+  const cards = scripts.map((s,i)=>{
+    const hooks = (s.hooks||[]);
+    const hookTabs = hooks.map((h,hi)=>`<div class="hook-tab ${hi===0?'active':''}" data-s="${i}" onclick="switchHook(${i},${hi})">钩子${hi+1}</div>`).join('');
+    const oralBlocks = (hooks.length ? hooks : [s.oral_script]).map((h,hi)=>{
+      const body = hooks.length ? `${h}\n\n${s.oral_script||''}` : (s.oral_script||'');
+      return `<div class="oral-content ${hi===0?'visible':''}" data-s="${i}">${escapeHtml(body)}</div>`;
+    }).join('');
+    return `<div class="script-card ${i===0?'visible':''}">
+      <div class="field-block"><div class="field-header"><span class="field-icon">📸</span><span class="field-label">封面文案</span></div>
+        <div class="field-body"><div class="cover-text">${escapeHtml((s.cover||'').replace(/\\n/g,'\n'))}</div></div></div>
+      <div class="field-block"><div class="field-header"><span class="field-icon">💬</span><span class="field-label">直发语</span></div>
+        <div class="field-body">${escapeHtml(s.direct_post||'')}</div></div>
+      <div class="field-block"><div class="field-header"><span class="field-icon">🎤</span><span class="field-label">口播 / 钩子变体</span></div>
+        <div class="field-body"><div class="hook-tabs">${hookTabs}</div>${oralBlocks}</div></div>
+      <div class="field-block"><div class="field-header"><span class="field-icon">📌</span><span class="field-label">置顶评论</span></div>
+        <div class="field-body">${escapeHtml(s.pinned||'')}</div></div>
+      <div class="meta-row">
+        ${s.hook_type?`<div class="meta-chip">钩子：<span>${escapeHtml(s.hook_type)}</span></div>`:''}
+        ${s.structure?`<div class="meta-chip">结构：<span>${escapeHtml(s.structure)}</span></div>`:''}
+        <div class="meta-chip">字数：<span>${countOralChars(s.oral_script)}</span></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('outputPlaceholder').style.display='none';
+  document.getElementById('outputContent').style.display='block';
+  document.getElementById('exportBtn').style.display='inline-block';
+  document.getElementById('outputMeta').textContent = topic;
+  document.getElementById('outputContent').innerHTML = `
+    <div style="margin-bottom:14px"><div style="font-size:15px;font-weight:800;margin-bottom:8px">${escapeHtml(topic)}</div>${reviewHtml}</div>
+    <div class="script-tabs">${tabs}</div>${cards}${topicsHtml}`;
+}
+
+async function runDemo(){
+  if (isRunning) return;
+  isRunning = true;
+  document.getElementById('badgeLive').textContent='● 运行中';
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true; btn.textContent='运行中…';
+  clearLog(); resetNodes();
+  document.getElementById('outputPlaceholder').style.display='flex';
+  document.getElementById('outputContent').style.display='none';
+  document.getElementById('outputMeta').textContent='';
+  document.getElementById('pipelineStatus').textContent='运行中…';
+  document.getElementById('exportBtn').style.display='none';
+  const apiKey = document.getElementById('cfgApiKey').value.trim();
+  try {
+    if (apiKey) {
+      const r = await runRealPipeline();
+      document.getElementById('pipelineStatus').innerHTML='<span style="color:#4ade80">✓ 全流程完成</span>';
+      addLog('SYS','tag-sys','═══ 生成完成，可导出阅读版 ═══');
+      renderOutput(r.topic, r.scripts, r.review);
+    } else {
+      await runMockPipeline();
+    }
+  } catch(e){
+    document.getElementById('pipelineStatus').innerHTML='<span style="color:#f87171">✗ 运行失败</span>';
+    addLog('SYS','tag-sys', `运行失败：${escapeHtml(e.message)}`);
+  }
+  document.getElementById('badgeLive').textContent='● 已就绪';
+  isRunning = false;
+  btn.disabled = false;
+  btn.textContent='▶ 再次生成';
+}
+
+async function runRealPipeline(){
+  let manualTopic = document.getElementById('cfgTopic').value.trim();
+  const keyword = document.getElementById('cfgKeyword').value.trim();
+  const reference = document.getElementById('cfgReference').value.trim();
+  const influencer = document.getElementById('cfgInfluencer').value.trim();
+  let topics=[], winner, draft, scripts, review;
+
+  setNodeState('Hot','running');
+  addLog('HOT','tag-hot', manualTopic ? `使用手动选题：「${escapeHtml(manualTopic)}」` : (keyword ? `关键词「${escapeHtml(keyword)}」，筛选公开热点…` : '抓取全网热点…'));
+  try {
+    if (manualTopic) {
+      topics = [{ topic: manualTopic, heat_score: 90 }];
+    } else {
+      const hotData = await fetchHotTopics(80, keyword);
+      const hotTopics = focusHotTopics(hotData.topics||[], 80);
+      const candidates = keyword ? rankTopicsForKeyword(hotTopics, keyword, 6) : hotTopics.slice(0,6);
+      topics = candidates.map(t => ({ topic: t.title, heat_score: t.heat_score||80, source:t.source, url:t.url, summary:t.summary }));
+      if (!topics.length) throw new Error('没有筛到合适热点，请填写手动选题或换个关键词');
+      topics.forEach((t,i)=>addLog('HOT','tag-hot', `  #${i+1} [${t.source||'热榜'}] ${escapeHtml(t.topic)}`));
+    }
+    setNodeState('Hot','done');
+  } catch(e){
+    setNodeState('Hot','error'); throw e;
+  }
+  await sleep(200);
+
+  if (manualTopic){
+    winner = normalizeTopicDecision({ topic: manualTopic, score:90, criteria:['用户手动指定'] }, topics);
+    addLog('JUDGE','tag-judge', `手动选题已锁定：${escapeHtml(winner.topic)}`);
+    setNodeState('Judge','done');
+  } else {
+    setNodeState('Judge','running');
+    addLog('JUDGE','tag-judge','AI 开始评估选题…');
+    if (!PROMPT_PACK) await loadPromptPack();
+    const topicsStr = topics.map((t,i)=>`${i+1}. ${t.topic}${t.summary?'｜'+t.summary:''}`).join('\n');
+    const sys2 = PROMPT_PACK.judge.system;
+    const user2 = fillTemplate(PROMPT_PACK.judge.user, { topics_str: topicsStr });
+    winner = normalizeTopicDecision(await callLLMJson(sys2, user2), topics);
+    addLog('JUDGE','tag-judge', `最佳选题 [${winner.score}分]：${escapeHtml(winner.topic)}`);
+    setNodeState('Judge','done');
+  }
+  await sleep(200);
+
+  setNodeState('Content','running');
+  addLog('CONTENT','tag-content', `目标选题：「${escapeHtml(winner.topic)}」`);
+  const styleHint = mode===2 && influencer ? `账号口吻：${influencer}。` : '';
+  const refHint = reference ? `参考素材（需语义改写，禁止照抄）：\n${reference.slice(0,1800)}\n` : '';
+  try {
+    if (!PROMPT_PACK) await loadPromptPack();
+    const sys3 = PROMPT_PACK.rewrite.system;
+    const user3 = fillTemplate(PROMPT_PACK.rewrite.user, {
+      style_hint: styleHint,
+      ref_hint: refHint,
+      topic: winner.topic,
+    });
+    const data = await callLLMJson(sys3, user3);
+    draft = data.oral_draft || data.draft || `今天聊聊「${winner.topic}」。`;
+    addLog('CONTENT','tag-content', `洗稿底稿完成（${countOralChars(draft)}字）✓`);
+    setNodeState('Content','done');
+  } catch(e){
+    draft = reference ? reference.slice(0,500) : `今天聊聊「${winner.topic}」，先把普通人真正关心的点讲清楚。`;
+    addLog('CONTENT','tag-content', `<span style="color:#fbbf24">洗稿降级：${escapeHtml(e.message)}</span>`);
+    setNodeState('Content','done');
+  }
+  await sleep(200);
+
+  setNodeState('Script','running');
+  const ANGLES=['痛点共鸣','信息差揭秘','普通人视角'];
+  const STRUCTS=['场景带入+情绪推进','问题前置+层层解答','结果前置+倒叙还原'];
+  const HOOKS=['痛点类','好奇类','反差类'];
+  if (!PROMPT_PACK) await loadPromptPack();
+  const sys4 = PROMPT_PACK.script.system;
+  scripts=[];
+  for (let idx=0; idx<3; idx++){
+    addLog('SCRIPT','tag-script', `→ 版本 ${idx+1}（${ANGLES[idx]}）…`);
+    try {
+      const user4 = fillTemplate(PROMPT_PACK.script.user, {
+        topic: winner.topic,
+        draft,
+        ref_block: reference ? `参考文案：${reference.slice(0,800)}\n` : '',
+        angle: ANGLES[idx],
+        structure: STRUCTS[idx],
+        hook_type: HOOKS[idx],
+      });
+      const raw = await callLLMJson(sys4, user4);
+      scripts.push(normalizeGeneratedScript(raw, idx, { topic: winner.topic, hookType:HOOKS[idx], structure:STRUCTS[idx], draft }));
+      addLog('SCRIPT','tag-script', `版本${idx+1} ✓`);
+    } catch(e){
+      scripts.push(buildFallbackScriptVersion(idx, { topic:winner.topic, draft, sourceCopy:reference, hookType:HOOKS[idx], structure:STRUCTS[idx] }));
+      addLog('SCRIPT','tag-script', `<span style="color:#fbbf24">版本${idx+1} 降级兜底：${escapeHtml(e.message.slice(0,80))}</span>`);
+    }
+  }
+  setNodeState('Script','done');
+  await sleep(200);
+
+  setNodeState('Review','running');
+  review = { compliance:true, oral:true, professional:true, issues:[], suggestions:[] };
+  try {
+    if (!PROMPT_PACK) await loadPromptPack();
+    const sys5 = PROMPT_PACK.review.system;
+    const summary = scripts.map((s,i)=>`版本${i+1}\n${s.direct_post}\n${s.oral_script}\n${(s.hooks||[]).join(' / ')}\n${s.pinned}`).join('\n\n');
+    const user5 = fillTemplate(PROMPT_PACK.review.user, { summary });
+    review = await callLLMJson(sys5, user5);
+    if (scripts.some(s => hasDouyinRisk([s.direct_post,s.oral_script,...(s.hooks||[]),s.pinned].join('\n')))) {
+      review.compliance=false;
+      review.issues=[...(review.issues||[]),'含风险话术'];
+    }
+    addLog('REVIEW','tag-review', `合规 ${review.compliance!==false?'✓':'✗'} · 口播 ${review.oral!==false?'✓':'✗'} · 专业 ${review.professional!==false?'✓':'✗'}`);
+  } catch(e){
+    addLog('REVIEW','tag-review', `审核跳过：${escapeHtml(e.message.slice(0,60))}`);
+  }
+  setNodeState('Review','done');
+  await sleep(200);
+
+  setNodeState('Push','running');
+  addLog('PUSH','tag-push','脚本已就绪，可导出阅读版');
+  setNodeState('Push','done');
+  return { topic: winner.topic, scripts, review };
+}
+
+async function runMockPipeline(){
+  addLog('SYS','tag-sys','演示模式：未填写 API Key，使用示例数据。填写密钥后可真实生成。');
+  setNodeState('Hot','running'); await animateProgress('Hot',900); setNodeState('Hot','done');
+  setNodeState('Judge','running'); await animateProgress('Judge',900);
+  MOCK_TOPICS.forEach((t,i)=>addLog('JUDGE','tag-judge', `#${i+1} [${t.score}] ${t.topic}`));
+  setNodeState('Judge','done');
+  setNodeState('Content','running'); await animateProgress('Content',800); setNodeState('Content','done');
+  setNodeState('Script','running'); await animateProgress('Script',900); setNodeState('Script','done');
+  setNodeState('Review','running'); await sleep(400); setNodeState('Review','done');
+  setNodeState('Push','running'); await sleep(300); setNodeState('Push','done');
+  const topic = document.getElementById('cfgTopic').value.trim() || MOCK_TOPICS[0].topic;
+  document.getElementById('pipelineStatus').innerHTML='<span style="color:#4ade80">✓ 演示完成</span>';
+  renderOutput(topic, MOCK_SCRIPTS, { compliance:true, oral:true, professional:true, issues:[] });
+}
+
+function exportScripts(){
+  const scripts = window._generatedScripts || MOCK_SCRIPTS;
+  const topic = String(window._currentTopic || '脚本');
+  const esc = (s)=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const cards = scripts.map((s,i)=>`
+    <div class="card">
+      <h2>版本 ${i+1} ${s.hook_type?`· ${esc(s.hook_type)}`:''}</h2>
+      <h3>封面</h3><pre>${esc((s.cover||'').replace(/\\n/g,'\n'))}</pre>
+      <h3>直发语</h3><p>${esc(s.direct_post)}</p>
+      <h3>口播</h3><pre>${esc(s.oral_script)}</pre>
+      <h3>钩子</h3><ul>${(s.hooks||[]).map(h=>`<li>${esc(h)}</li>`).join('')}</ul>
+      <h3>置顶评论</h3><p>${esc(s.pinned)}</p>
+    </div>`).join('');
+  const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>${esc(topic)}</title>
+  <style>body{font-family:-apple-system,PingFang SC,sans-serif;max-width:860px;margin:40px auto;padding:0 20px;color:#1f2937;background:#f7f8fc}
+  .card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin:16px 0}pre{white-space:pre-wrap;line-height:1.7}</style></head>
+  <body><h1>${esc(topic)}</h1><p style="color:#6b7280">${new Date().toLocaleString('zh-CN')}</p>${cards}</body></html>`;
+  const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `脚本_${topic.slice(0,10)}_${new Date().toISOString().slice(0,10)}.html`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+addLog('SYS','tag-sys','通用工具已就绪：支持通义/OpenAI/DeepSeek/Kimi/智谱等 OpenAI 兼容模型。');
+loadProviders()
+  .then(() => loadPromptPack())
+  .then(() => checkLocalApi());
+</script>
+</body>
+</html>
