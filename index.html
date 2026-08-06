@@ -52,11 +52,13 @@ body {
 .topbar-actions { display: flex; gap: 10px; }
 .btn {
   padding: 7px 16px; border-radius: 8px; cursor: pointer;
-  font-size: 13px; font-weight: 600; border: none; transition: all .2s;
+  font-size: 13px; font-weight: 600; border: none;
+  transition: background .2s, border-color .2s, color .2s, transform .28s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
 }
 .btn-primary { background: var(--accent); color: #fff; }
-.btn-primary:hover { background: #4a58e8; transform: translateY(-1px); }
-.btn-primary:disabled { background: #3a3f60; color: #6b7280; cursor: not-allowed; transform: none; }
+.btn-primary:hover { background: #4a58e8; }
+.btn-primary:disabled { background: #3a3f60; color: #6b7280; cursor: not-allowed; transform: none !important; }
 .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
 .btn-outline:hover { border-color: var(--accent); color: #818cf8; }
 .btn-sm { padding: 5px 12px; font-size: 12px; }
@@ -79,7 +81,9 @@ body {
 .mode-tabs { display: flex; gap: 0; background: var(--bg3); border-radius: 8px; padding: 3px; }
 .mode-tab {
   flex: 1; text-align: center; padding: 7px 4px; border-radius: 6px;
-  cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); transition: all .2s;
+  cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted);
+  transition: background .2s, color .2s, transform .28s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
 }
 .mode-tab.active { background: var(--accent); color: #fff; }
 .config-row { margin-bottom: 12px; }
@@ -300,13 +304,19 @@ select.config-input option { background: var(--bg3); }
 .source-chip.active { color: #fff; background: var(--accent); border-color: var(--accent); }
 .source-chip:hover { border-color: var(--accent); color: #818cf8; }
 .source-chip.active:hover { color: #fff; }
-.source-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.source-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px;
+  perspective: 900px;
+}
 .source-card {
   min-height: 138px; display: flex; flex-direction: column; gap: 8px;
   background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-  padding: 12px; transition: border-color .2s, transform .2s;
+  padding: 12px;
+  transition: border-color .2s, transform .28s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-style: preserve-3d;
+  will-change: transform;
 }
-.source-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.source-card:hover { border-color: var(--accent); }
 .source-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .source-platform { font-size: 11px; color: #a78bfa; font-weight: 700; }
 .source-heat { font-size: 11px; color: var(--muted); white-space: nowrap; }
@@ -466,9 +476,39 @@ select.config-input option { background: var(--bg3); }
 .mvp-hint {
   font-size: 11px; color: var(--muted); line-height: 1.6; margin-top: 6px;
 }
+
+/* ── 光标残影（方案2）；不挡点击、不替换系统光标 ── */
+.cursor-trail {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  overflow: hidden;
+}
+.cursor-trail-dot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  will-change: transform, opacity;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cursor-trail { display: none !important; }
+}
 </style>
 </head>
 <body>
+
+<div class="cursor-trail" id="cursorTrail" aria-hidden="true">
+  <span class="cursor-trail-dot"></span>
+  <span class="cursor-trail-dot"></span>
+  <span class="cursor-trail-dot"></span>
+  <span class="cursor-trail-dot"></span>
+</div>
 
 <div class="topbar">
   <div class="logo">🎬 短视频爆款脚本 AI Agent</div>
@@ -1447,6 +1487,95 @@ addLog('SYS','tag-sys','通用工具已就绪：支持通义/OpenAI/DeepSeek/Kim
 loadProviders()
   .then(() => loadPromptPack())
   .then(() => checkLocalApi());
+
+/* ── 方案2：控制台氛围光标磁吸 + accent 短残影 ── */
+(function initCursorFx(){
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const coarse = window.matchMedia('(pointer: coarse)').matches;
+  const trail = document.getElementById('cursorTrail');
+  if (reduce || coarse || !trail) {
+    if (trail) trail.remove();
+    return;
+  }
+
+  const dots = Array.from(trail.querySelectorAll('.cursor-trail-dot'));
+  const history = dots.map(() => ({ x: -40, y: -40 }));
+  let mx = -40, my = -40;
+  let lastMove = 0;
+  let activeMag = null;
+  const MAG_SEL = '.btn:not(:disabled), .mode-tab, .source-card';
+
+  function clamp(v, m){ return Math.max(-m, Math.min(m, v)); }
+
+  function resetMag(){
+    if (!activeMag) return;
+    activeMag.style.transform = '';
+    activeMag = null;
+  }
+
+  function applyMag(el){
+    if (!el || el.disabled) { resetMag(); return; }
+    if (activeMag && activeMag !== el) resetMag();
+    activeMag = el;
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const nx = r.width > 0 ? (mx - cx) / (r.width / 2) : 0;
+    const ny = r.height > 0 ? (my - cy) / (r.height / 2) : 0;
+    const isCard = el.classList.contains('source-card');
+    const strength = isCard ? 6 : 5;
+    const tx = clamp(nx, 1) * strength;
+    const ty = clamp(ny, 1) * strength;
+    if (isCard) {
+      const rx = clamp(-ny, 1) * 3.2;
+      const ry = clamp(nx, 1) * 3.2;
+      el.style.transform = `translate3d(${tx.toFixed(2)}px,${ty.toFixed(2)}px,0) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg)`;
+    } else {
+      el.style.transform = `translate3d(${tx.toFixed(2)}px,${ty.toFixed(2)}px,0)`;
+    }
+  }
+
+  function onPointerMove(e){
+    if (e.pointerType && e.pointerType !== 'mouse') return;
+    mx = e.clientX;
+    my = e.clientY;
+    lastMove = performance.now();
+    const el = e.target && e.target.closest ? e.target.closest(MAG_SEL) : null;
+    if (el) applyMag(el);
+    else resetMag();
+  }
+
+  function onScroll(){
+    if (activeMag) applyMag(activeMag);
+  }
+
+  document.addEventListener('pointermove', onPointerMove, { passive: true });
+  document.addEventListener('pointerleave', resetMag);
+  document.addEventListener('scroll', onScroll, { passive: true, capture: true });
+
+  function tick(now){
+    history[0].x += (mx - history[0].x) * 0.42;
+    history[0].y += (my - history[0].y) * 0.42;
+    for (let i = 1; i < history.length; i++) {
+      const lag = 0.3 - i * 0.04;
+      history[i].x += (history[i - 1].x - history[i].x) * lag;
+      history[i].y += (history[i - 1].y - history[i].y) * lag;
+    }
+    const idleMs = now - lastMove;
+    const fading = idleMs > 200;
+    dots.forEach((dot, i) => {
+      const p = history[i];
+      let op = 0.58 - i * 0.12;
+      if (fading) op -= (idleMs - 200) / 280;
+      if (lastMove === 0) op = 0;
+      const sc = 1 - i * 0.16;
+      dot.style.transform = `translate3d(${p.x}px,${p.y}px,0) translate(-50%,-50%) scale(${sc})`;
+      dot.style.opacity = String(Math.max(0, op));
+    });
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+})();
 </script>
 </body>
 </html>
